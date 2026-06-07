@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Catch Game Pro Clean</title>
+
+<style>
+
+body{
+    margin:0;
+    overflow:hidden;
+    font-family:Arial;
+    background: radial-gradient(circle at center, #141414, #050505);
+    position: relative;
+    isolation: isolate;
+}
+
+/* HUD */
+#score, #timer, #combo{
+    position:fixed;
+    top:20px;
+    color:white;
+    font-size:20px;
+    z-index:9999;
+    background:rgba(0,0,0,0.4);
+    padding:8px 12px;
+    border-radius:8px;
+}
+
+#score{ left:20px; }
+#timer{ right:20px; }
+#combo{ left:50%; transform:translateX(-50%); }
+
+/* BOX */
+#box{
+    width:80px;
+    height:80px;
+    background:linear-gradient(135deg, orange, red);
+    position:absolute;
+    border-radius:12px;
+    cursor:pointer;
+    box-shadow:0 10px 25px rgba(0,0,0,0.5);
+    z-index:10;
+    transition: left 0.15s ease, top 0.15s ease, width 0.15s ease, height 0.15s ease;
+    transform: translateZ(0);
+    will-change: left, top;
+}
+
+/* LEADERBOARD */
+#leaderboard{
+    position:fixed;
+    bottom:20px;
+    left:20px;
+    background:rgba(0,0,0,0.7);
+    color:white;
+    padding:12px;
+    border-radius:10px;
+    width:220px;
+    font-size:14px;
+    z-index:2147483647;
+}
+
+#leaderboard h3{
+    margin:0 0 10px 0;
+    color:orange;
+}
+
+</style>
+</head>
+
+<body>
+
+<div id="score">Score: 0</div>
+<div id="timer">Time: 30</div>
+<div id="combo">Combo: 0</div>
+<div id="box"></div>
+<div id="leaderboard"></div>
+
+<script type="module">
+
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-app.js";
+import {
+  getFirestore,
+  collection,
+  doc,
+  getDoc,
+  setDoc,
+  getDocs,
+  query,
+  orderBy,
+  limit
+} from "https://www.gstatic.com/firebasejs/12.14.0/firebase-firestore.js";
+
+/* FIREBASE */
+const firebaseConfig = {
+  apiKey: "YOUR_API_KEY",
+  authDomain: "catch-game-aa4d4.firebaseapp.com",
+  projectId: "catch-game-aa4d4",
+  storageBucket: "catch-game-aa4d4.firebasestorage.app",
+  messagingSenderId: "305244477959",
+  appId: "YOUR_APP_ID"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+/* SOUND */
+const clickSound = new Audio("https://actions.google.com/sounds/v1/cartoon/pop.ogg");
+const gameOverSound = new Audio("https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg");
+
+let score = 0;
+let combo = 0;
+let timeLeft = 30;
+
+let playerName = prompt("Enter your name:");
+
+const box = document.getElementById("box");
+const scoreText = document.getElementById("score");
+const timerText = document.getElementById("timer");
+const comboText = document.getElementById("combo");
+const leaderboard = document.getElementById("leaderboard");
+
+/* LOAD LEADERBOARD (TOP BEST ONLY) */
+async function loadLeaderboard(){
+
+    const q = query(
+        collection(db,"scores"),
+        orderBy("score","desc"),
+        limit(5)
+    );
+
+    const snap = await getDocs(q);
+
+    let html = "<h3>🏆 Top Players</h3>";
+
+    snap.forEach(d=>{
+        let data = d.data();
+        html += `<p>${data.name} - ${data.score}</p>`;
+    });
+
+    leaderboard.innerHTML = html;
+}
+
+/* SAVE ONLY BEST SCORE PER PLAYER */
+async function saveScore(){
+
+    const ref = doc(db,"scores",playerName);
+    const old = await getDoc(ref);
+
+    if(!old.exists()){
+        await setDoc(ref,{
+            name:playerName,
+            score:score
+        });
+    } else {
+        if(score > old.data().score){
+            await setDoc(ref,{
+                name:playerName,
+                score:score
+            });
+        }
+    }
+}
+
+/* TIMER */
+const timer = setInterval(()=>{
+
+    timeLeft--;
+    timerText.innerText="Time: "+timeLeft;
+
+    if(timeLeft<=0){
+
+        clearInterval(timer);
+        box.style.display="none";
+
+        gameOverSound.play();
+
+        saveScore().then(loadLeaderboard);
+
+        alert("Game Over! Score: "+score);
+    }
+
+},1000);
+
+/* CLICK */
+box.addEventListener("click",(e)=>{
+
+    clickSound.currentTime=0;
+    clickSound.play();
+
+    score++;
+    combo++;
+
+    scoreText.innerText="Score: "+score;
+    comboText.innerText="Combo: "+combo;
+
+    if(score % 5 === 0){
+        let size=Math.max(25,80-score);
+        box.style.width=size+"px";
+        box.style.height=size+"px";
+    }
+
+    const x=Math.random()*(window.innerWidth-box.offsetWidth);
+    const y=Math.random()*(window.innerHeight-box.offsetHeight);
+
+    box.style.left=x+"px";
+    box.style.top=y+"px";
+
+    setTimeout(()=>{
+        combo=0;
+        comboText.innerText="Combo: 0";
+    },1200);
+
+});
+
+/* INIT */
+loadLeaderboard();
+
+</script>
+
+</body>
+</html>
