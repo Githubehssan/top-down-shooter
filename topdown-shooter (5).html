@@ -1,0 +1,1970 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Base Assault - Top Down Shooter</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0a12;color:#e8e8f0;font-family:'Segoe UI',Tahoma,sans-serif;overflow:hidden;height:100vh}
+#gameCanvas{display:none;cursor:crosshair}
+.screen{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:linear-gradient(135deg,#0a0a12,#1a1a2e);z-index:10}
+.screen.scroll-screen{overflow-y:auto;justify-content:flex-start;padding:16px 0;height:100vh;box-sizing:border-box}
+.screen.scroll-screen .panel{margin:12px auto;flex-shrink:0;max-width:min(700px,96vw)}
+.screen.scroll-screen h2{margin-top:8px;flex-shrink:0}
+.screen.hidden{display:none!important}
+h1{font-size:2.5rem;margin-bottom:1rem;background:linear-gradient(90deg,#4af,#f4a);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+h2{font-size:1.5rem;margin-bottom:1rem;color:#8af}
+.panel{background:rgba(20,20,40,.9);border:2px solid #334;border-radius:12px;padding:2rem;max-width:600px;width:90%}
+label{display:block;margin:.5rem 0 .2rem;color:#aaa}
+input[type=text],select{width:100%;padding:.6rem;border:1px solid #445;border-radius:6px;background:#1a1a2e;color:#fff;font-size:1rem}
+input[type=range]{width:100%}
+.btn{padding:.7rem 1.5rem;margin:.4rem;border:none;border-radius:8px;background:linear-gradient(135deg,#3366cc,#4488ff);color:#fff;font-size:1rem;cursor:pointer;transition:transform .1s}
+.btn:hover{transform:scale(1.05)}
+.btn.secondary{background:linear-gradient(135deg,#444,#666)}
+.btn.danger{background:linear-gradient(135deg,#c33,#f55)}
+.btn-row{display:flex;flex-wrap:wrap;gap:.5rem;justify-content:center;margin-top:1rem}
+.tutorial-slide{text-align:center;padding:1rem}
+.tutorial-icon{font-size:4rem;margin:1rem 0}
+.tutorial-text{font-size:1.1rem;line-height:1.6;color:#ccc}
+.dots{display:flex;gap:.5rem;justify-content:center;margin:1rem 0}
+.dot{width:10px;height:10px;border-radius:50%;background:#445}
+.dot.active{background:#4af}
+.level-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:.8rem;margin:1rem 0}
+.level-btn{padding:1rem;border:2px solid #445;border-radius:10px;background:#1a1a2e;color:#fff;cursor:pointer;position:relative}
+.level-btn.locked{opacity:.4;cursor:not-allowed}
+.level-btn .stars{color:#fa0;font-size:.8rem}
+.upgrade-card{padding:1rem;border:2px solid #556;border-radius:10px;background:#222;margin:.5rem;cursor:pointer;text-align:center;flex:1;min-width:150px}
+.upgrade-card:hover{border-color:#4af;background:#2a2a4e}
+.upgrade-row{display:flex;flex-wrap:wrap;gap:.5rem}
+.stat-row{display:flex;justify-content:space-between;padding:.3rem 0;border-bottom:1px solid #334}
+#hud{position:fixed;inset:0;pointer-events:none;z-index:5}
+#minimap{position:fixed;top:10px;right:10px;border:2px solid #445;border-radius:6px;background:rgba(0,0,0,.6);display:none}
+#messageBox{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.8);padding:.8rem 1.5rem;border-radius:8px;border:1px solid #4af;opacity:0;transition:opacity .5s;max-width:500px;text-align:center}
+#messageBox.show{opacity:1}
+#pauseOverlay{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:20;display:flex;align-items:center;justify-content:center}
+#pauseOverlay.hidden{display:none}
+#generatingMsg{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,.9);padding:1rem 2rem;border-radius:8px;z-index:15;display:none}
+</style>
+</head>
+<body>
+<canvas id="gameCanvas"></canvas>
+<div id="hud"></div>
+<canvas id="minimap" width="160" height="160"></canvas>
+<div id="messageBox"></div>
+<div id="generatingMsg">در حال ساخت مرحله بعدی...</div>
+
+<div id="setupScreen" class="screen">
+  <h1>⚔️ Base Assault</h1>
+  <div class="panel">
+    <label>نام بازیکن</label>
+    <input type="text" id="playerName" value="سرباز" maxlength="20">
+    <label>تعداد مرحله: <span id="levelCountVal">10</span></label>
+    <input type="range" id="levelCount" min="5" max="30" value="10">
+    <label>سختی</label>
+    <select id="difficulty">
+      <option value="easy">آسان</option>
+      <option value="normal" selected>معمولی</option>
+      <option value="hard">سخت</option>
+    </select>
+    <div class="btn-row">
+      <button class="btn" id="btnNewGame">بازی جدید</button>
+      <button class="btn secondary" id="btnContinue">ادامه</button>
+    </div>
+  </div>
+</div>
+
+<div id="tutorialScreen" class="screen hidden">
+  <h2>راهنما</h2>
+  <div class="panel tutorial-slide" id="tutorialContent"></div>
+  <div class="dots" id="tutorialDots"></div>
+  <div class="btn-row">
+    <button class="btn secondary" id="btnTutPrev">قبلی</button>
+    <button class="btn" id="btnTutNext">بعدی</button>
+  </div>
+</div>
+
+<div id="levelSelectScreen" class="screen hidden">
+  <h2>انتخاب مرحله</h2>
+  <div class="panel">
+    <p>Intel: <span id="intelDisplay">0</span> 💎</p>
+    <div class="level-grid" id="levelGrid"></div>
+    <div class="btn-row">
+      <button class="btn secondary" id="btnHowToPlay">راهنما</button>
+      <button class="btn danger" id="btnQuitSetup">خروج</button>
+    </div>
+  </div>
+</div>
+
+<div id="preMissionScreen" class="screen scroll-screen hidden">
+  <h2>آماده‌سازی مأموریت</h2>
+  <div class="panel">
+    <canvas id="preMapCanvas" width="300" height="200" style="border:1px solid #445;border-radius:6px;display:block;margin:0 auto 1rem"></canvas>
+    <div id="objectivesList"></div>
+    <h3 style="margin:1rem 0 .5rem">خرید قبل مأموریت (Intel)</h3>
+    <div class="upgrade-row" id="preShop"></div>
+    <h3 style="margin:1rem 0 .5rem">انتخاب Upgrade</h3>
+    <div class="upgrade-row" id="preUpgrades"></div>
+    <div class="btn-row">
+      <button class="btn" id="btnStartMission">شروع مأموریت</button>
+      <button class="btn secondary" id="btnPreBack">بازگشت</button>
+    </div>
+  </div>
+</div>
+
+<div id="postMissionScreen" class="screen scroll-screen hidden">
+  <h2>مأموریت تمام شد!</h2>
+  <div class="panel">
+    <div id="postStars" style="font-size:2rem;text-align:center;margin:1rem 0"></div>
+    <div id="postStats"></div>
+    <h3 style="margin:1rem 0 .5rem">انتخاب Upgrade</h3>
+    <div class="upgrade-row" id="postUpgrades"></div>
+    <div class="btn-row">
+      <button class="btn" id="btnNextLevel">مرحله بعد</button>
+      <button class="btn secondary" id="btnPostLevelSelect">انتخاب مرحله</button>
+    </div>
+  </div>
+</div>
+
+<div id="pauseOverlay" class="hidden">
+  <div class="panel" style="text-align:center">
+    <h2>⏸ توقف</h2>
+    <div class="btn-row" style="flex-direction:column">
+      <button class="btn" id="btnResume">ادامه</button>
+      <button class="btn secondary" id="btnRestart">شروع مجدد</button>
+      <button class="btn secondary" id="btnPauseLevelSelect">انتخاب مرحله</button>
+      <button class="btn secondary" id="btnPauseHowTo">راهنما</button>
+      <button class="btn secondary" id="btnSettings">تنظیمات</button>
+      <button class="btn danger" id="btnPauseQuit">خروج</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============ UTILITIES ============
+const TAU = Math.PI * 2;
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+const angleTo = (a, b) => Math.atan2(b.y - a.y, b.x - a.x);
+const rand = (rng) => rng();
+const randInt = (rng, a, b) => Math.floor(rand(rng) * (b - a + 1)) + a;
+const randChoice = (rng, arr) => arr[Math.floor(rand(rng) * arr.length)];
+
+function mulberry32(seed) {
+  return function() {
+    seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+    let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+const THEMES = {
+  city: { name: 'شهر', wall: '#556677', floor: '#2a2a35', grass: '#3a3a45', accent: '#6688aa', sky: '#1a1a2e' },
+  forest: { name: 'جنگل', wall: '#4a5a3a', floor: '#2a3520', grass: '#3a5530', accent: '#6a8a4a', sky: '#1a2a1a' },
+  desert: { name: 'صحرا', wall: '#aa8855', floor: '#3a3020', grass: '#5a4a30', accent: '#ccaa66', sky: '#2a2010' },
+  snow: { name: 'برف', wall: '#8899aa', floor: '#d0d8e0', grass: '#e8eef5', accent: '#aabbcc', sky: '#c0d0e0' }
+};
+const THEME_KEYS = Object.keys(THEMES);
+
+const UPGRADES = [
+  { id: 'maxhp', icon: '❤️', name: 'Max HP +20', apply: s => { s.maxHp += 20; s.hp = Math.min(s.hp + 20, s.maxHp); } },
+  { id: 'regen', icon: '❤️', name: 'HP Regen آرام', apply: s => { s.regen = true; } },
+  { id: 'armor', icon: '🛡️', name: 'Armor', apply: s => { s.armor = (s.armor || 0) + 0.2; } },
+  { id: 'speed', icon: '💨', name: 'Speed +10%', apply: s => { s.speedMult = (s.speedMult || 1) * 1.1; } },
+  { id: 'dash2', icon: '💨', name: 'Dash دوتایی', apply: s => { s.dashCount = 2; } },
+  { id: 'silent', icon: '💨', name: 'Silent Move', apply: s => { s.silent = true; } },
+  { id: 'damage', icon: '🔫', name: 'Damage +15%', apply: s => { s.dmgMult = (s.dmgMult || 1) * 1.15; } },
+  { id: 'firerate', icon: '🔫', name: 'Fire Rate +20%', apply: s => { s.fireRateMult = (s.fireRateMult || 1) * 1.2; } },
+  { id: 'pierce', icon: '🔫', name: 'Bullet Pierce', apply: s => { s.pierce = true; } },
+  { id: 'ammo', icon: '🔫', name: 'Ammo +50%', apply: s => { s.ammoMult = (s.ammoMult || 1) * 1.5; } },
+  { id: 'grenade', icon: '💣', name: 'Grenade اضافه', apply: s => { s.grenadeMax = (s.grenadeMax || 2) + 1; } },
+  { id: 'grenade2', icon: '💣', name: 'Grenade +2', apply: s => { s.grenadeMax = (s.grenadeMax || 2) + 2; } },
+  { id: 'radar', icon: '📡', name: 'Radar بهتر', apply: s => { s.radar = true; } },
+  { id: 'savepoint', icon: '💾', name: 'Save Point اضافه', apply: s => { s.extraSave = (s.extraSave || 0) + 1; } }
+];
+
+const PRE_SHOP = [
+  { id: 'shotgun', name: 'Shotgun', cost: 50, desc: 'قدرت بالا نزدیک' },
+  { id: 'smg', name: 'SMG', cost: 40, desc: 'شلیک سریع' },
+  { id: 'armor_start', name: 'Armor Start', cost: 30, desc: '+30% HP شروع' },
+  { id: 'ammo_start', name: 'Ammo Pack', cost: 20, desc: 'مهمات اضافه' }
+];
+
+const TUTORIAL_SLIDES = [
+  { icon: '🎮', title: 'کنترل‌ها', text: 'WASD حرکت | Mouse نشانه | Click شلیک | Space Dash | R Reload | G نارنجک | 1/2 سلاح | C ساخت آیتم | Tab تعویض slot | Q استفاده آیتم | F برداشتن لوت | E تعامل (در/پرچم/رادیو/save) | Escape توقف' },
+  { icon: '🚪', title: 'در و لوت', text: 'نزدیک در: نقطه زرد = E بزن باز/بسته میشه. نزدیک آیتم: نقطه سبز = F بزن برمیداری. داخل ساختمون هر چیزی ممکنه باشه!' },
+  { icon: '🏠', title: 'ساختمان‌ها', text: 'کنار در [E] بزن و وارد شو. از بیرون سقف می‌بینی، داخل که رفتی سقف شفاف میشه و لوت/دشمن داخل نمایان میشن. با F آیتم بردار.' },
+  { icon: '🎯', title: 'هدف', text: 'Commander اصلی رو بکش، بعد با E پرچم بزن. مسیر اصلی سریع‌تره، مسیر فرعی لوت بیشتر.' },
+  { icon: '🎒', title: 'Inventory', text: '6 خونه کوله. Q = استفاده از اولین آیتم (health/armor). 2x Health Pack = Medkit با C | 2x Grenade = C4 برای دیوار. گوشت برای حواس‌پرتی سگ.' },
+  { icon: '⚠️', title: 'هشدارها', text: 'Alert 1-5: سروصدا زیاد = دشمن بیشتر. Searchlight، دوربین، رادیو. شب stealth آسون‌تره. از پشت نزدیک = Stealth Kill.' }
+];
+
+const DIFF_MULT = { easy: 0.7, normal: 1, hard: 1.4 };
+
+// ============ AUDIO ============
+class AudioManager {
+  constructor() { this.ctx = null; this.muted = false; this.musicGain = null; this.musicOsc = null; }
+  init() {
+    if (this.ctx) return;
+    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    this.master = this.ctx.createGain();
+    this.master.gain.value = 0.3;
+    this.master.connect(this.ctx.destination);
+    this.musicGain = this.ctx.createGain();
+    this.musicGain.gain.value = 0.15;
+    this.musicGain.connect(this.master);
+    this.startMusic();
+  }
+  tone(freq, dur, type = 'square', vol = 0.3) {
+    if (!this.ctx || this.muted) return;
+    const o = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    o.type = type; o.frequency.value = freq;
+    g.gain.setValueAtTime(vol, this.ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + dur);
+    o.connect(g); g.connect(this.master);
+    o.start(); o.stop(this.ctx.currentTime + dur);
+  }
+  noise(dur, vol = 0.2) {
+    if (!this.ctx || this.muted) return;
+    const buf = this.ctx.createBuffer(1, this.ctx.sampleRate * dur, this.ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    const s = this.ctx.createBufferSource(); s.buffer = buf;
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(vol, this.ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + dur);
+    s.connect(g); g.connect(this.master);
+    s.start();
+  }
+  shoot(type = 'pistol') {
+    if (type === 'shotgun') { this.noise(0.15, 0.4); this.tone(80, 0.1, 'sawtooth', 0.3); }
+    else { this.tone(200, 0.05, 'square', 0.2); this.noise(0.05, 0.15); }
+  }
+  enemyShoot() { this.tone(150, 0.08, 'square', 0.15); }
+  hitWall() { this.tone(100, 0.05, 'triangle', 0.1); }
+  enemyDeath() { this.tone(300, 0.1, 'sawtooth', 0.2); this.tone(150, 0.15, 'sawtooth', 0.15); }
+  playerHurt() { this.tone(80, 0.2, 'sawtooth', 0.3); }
+  playerDeath() {
+    this.tone(80, 0.6, 'sine', 0.5);
+    this.tone(60, 0.8, 'sawtooth', 0.3);
+    this.noise(0.3, 0.35);
+  }
+  reload() { this.tone(400, 0.05, 'square', 0.15); setTimeout(() => this.tone(500, 0.05, 'square', 0.15), 150); }
+  dash() { this.noise(0.2, 0.2); this.tone(600, 0.1, 'sine', 0.15); }
+  alert() { this.tone(440, 0.15, 'square', 0.2); this.tone(550, 0.15, 'square', 0.2); }
+  pickup() { this.tone(800, 0.1, 'sine', 0.2); }
+  door() { this.tone(200, 0.1, 'triangle', 0.2); }
+  grenade() { this.noise(0.3, 0.5); this.tone(50, 0.4, 'sawtooth', 0.4); }
+  c4() { this.noise(0.5, 0.6); this.tone(40, 0.5, 'sawtooth', 0.5); }
+  flag() { [523,659,784,1047].forEach((f,i) => setTimeout(() => this.tone(f, 0.2, 'sine', 0.3), i * 150)); }
+  wave() { this.tone(300, 0.2, 'square', 0.2); }
+  dayNight() { this.tone(200, 0.3, 'sine', 0.15); }
+  startMusic() {
+    if (!this.ctx) return;
+    let step = 0;
+    const mel  = [220,246,261,293,220,196,220,246];
+    const bass = [55,55,65,55,49,55,55,65];
+    const play = () => {
+      if (!this.ctx || this.muted) return;
+      const sp = 1/(this.alertSpeed||1), t = this.ctx.currentTime;
+      // bass
+      const bo=this.ctx.createOscillator(),bg=this.ctx.createGain();
+      bo.type='triangle';bo.frequency.value=bass[step%8];
+      bg.gain.setValueAtTime(0.12,t);bg.gain.exponentialRampToValueAtTime(0.001,t+0.45*sp);
+      bo.connect(bg);bg.connect(this.musicGain);bo.start(t);bo.stop(t+0.5*sp);
+      // melody
+      const mo=this.ctx.createOscillator(),mg2=this.ctx.createGain();
+      mo.type='sine';mo.frequency.value=mel[step%8];
+      mg2.gain.setValueAtTime(0.06,t+0.05);mg2.gain.exponentialRampToValueAtTime(0.001,t+0.4*sp);
+      mo.connect(mg2);mg2.connect(this.musicGain);mo.start(t+0.05);mo.stop(t+0.5*sp);
+      // hi-hat roye beat های زوج
+      if(step%2===0){
+        const sr=this.ctx.sampleRate,hb=this.ctx.createBuffer(1,sr*0.04,sr);
+        const hd=hb.getChannelData(0);for(let i=0;i<hd.length;i++)hd[i]=(Math.random()*2-1);
+        const hs=this.ctx.createBufferSource(),hg=this.ctx.createGain(),hf=this.ctx.createBiquadFilter();
+        hs.buffer=hb;hf.type='highpass';hf.frequency.value=6000;
+        hg.gain.setValueAtTime(0.04,t);hg.gain.exponentialRampToValueAtTime(0.001,t+0.04);
+        hs.connect(hf);hf.connect(hg);hg.connect(this.musicGain);hs.start(t);
+      }
+      step++;
+      this.musicTimer=setTimeout(play,320*sp);
+    };
+    play();
+  }
+  setAlertSpeed(level) { this.alertSpeed = 1 + level * 0.15; }
+}
+
+// ============ SAVE ============
+const SaveManager = {
+  KEY: 'baseAssaultSave',
+  load() { try { return JSON.parse(localStorage.getItem(this.KEY)); } catch { return null; } },
+  save(data) { localStorage.setItem(this.KEY, JSON.stringify(data)); },
+  clear() { localStorage.removeItem(this.KEY); },
+  cacheLevel(n, data) { localStorage.setItem('levelCache_v5_' + n, JSON.stringify(data)); },
+  getCachedLevel(n) { try { return JSON.parse(localStorage.getItem('levelCache_v5_' + n)); } catch { return null; } }
+};
+
+// ============ MESSAGE ENGINE ============
+class MessageEngine {
+  constructor() {
+    this.cooldowns = {};
+    this.rules = [
+      { cond: g => g.player.hp < g.player.maxHp * 0.25, msg: 'HP کمه! سریع heal کن!', cd: 15000 },
+      { cond: g => g.player.ammo[0] < 5 && g.player.ammo[1] < 5, msg: 'مهمات تمومه! لوت بگرد.', cd: 12000 },
+      { cond: g => g.alertLevel >= 4, msg: 'Alert بالاست! مخفی شو یا بجنگ!', cd: 10000 },
+      { cond: g => g.isNight, msg: 'شب شده - stealth بهتره', cd: 20000 },
+      { cond: g => g.player.insideBuilding, msg: 'داخل ساختمونی - مراقب باش', cd: 15000 },
+      { cond: g => g.nearbyEnemies > 5, msg: 'دشمن زیاده! عقب بکش یا نارنجک بزن', cd: 8000 },
+      { cond: g => g.idleTime > 8000, msg: 'بی‌حرکتی خطرناکه! حرکت کن', cd: 15000 },
+      { cond: g => g.justKilled, msg: 'خوب زدی! ادامه بده 💪', cd: 5000 },
+      { cond: g => g.justLooted, msg: 'لوت خوبی بود!', cd: 5000 },
+      { cond: g => g.player.hp > g.player.maxHp * 0.8 && g.accuracy > 0.7, msg: 'عالی داری بازی میکنی!', cd: 20000 },
+      { cond: g => g.weather === 'fog', msg: 'مه همه‌جاست - فرصت stealth', cd: 18000 },
+      { cond: g => g.player.hasGhost, msg: 'Ghost Mode فعاله 👻', cd: 25000 },
+      { cond: g => g.commanderAlive, msg: 'Commander هنوز زنده‌ست - هدف اصلی!', cd: 20000 }
+    ];
+  }
+  update(game, dt) {
+    const ctx = {
+      player: game.player, alertLevel: game.alertLevel, isNight: game.isNight,
+      insideBuilding: game.player.insideBuilding, nearbyEnemies: game.enemies.filter(e => e.alive && dist(e, game.player) < 300).length,
+      idleTime: game.idleTime, justKilled: game.justKilled, justLooted: game.justLooted,
+      accuracy: game.stats.shots > 0 ? game.stats.hits / game.stats.shots : 1,
+      weather: game.weather, commanderAlive: game.enemies.some(e => e.type === 'commander' && e.alive)
+    };
+    game.justKilled = false; game.justLooted = false;
+    const now = Date.now();
+    for (const rule of this.rules) {
+      if (rule.cond(ctx) && (!this.cooldowns[rule.msg] || now - this.cooldowns[rule.msg] > rule.cd)) {
+        this.show(rule.msg);
+        this.cooldowns[rule.msg] = now;
+        break;
+      }
+    }
+  }
+  show(text) {
+    const el = document.getElementById('messageBox');
+    el.textContent = text;
+    el.classList.add('show');
+    clearTimeout(this.fadeTimer);
+    this.fadeTimer = setTimeout(() => el.classList.remove('show'), 3000);
+  }
+}
+
+// ============ LEVEL GENERATOR ============
+function placeWallLine(grid, rows, cols, r, c, len, horiz, wallType) {
+  for (let j = 0; j < len; j++) {
+    const rr = horiz ? r : r + j, cc = horiz ? c + j : c;
+    if (rr > 2 && rr < rows - 3 && cc > 2 && cc < cols - 3 && grid[rr][cc] === 0)
+      grid[rr][cc] = wallType;
+  }
+}
+
+function populateBuildingInterior(b, tile, rng, loot, interiorEnemies) {
+  const itemTypes = ['health', 'ammo', 'grenade', 'armor', 'keycard', 'medkit', 'meat', 'radio'];
+  const n = randInt(rng, 2, 4);
+  const pad = tile * 0.55;
+  for (let i = 0; i < n; i++) {
+    loot.push({
+      x: b.x + pad + rand(rng) * Math.max(tile, b.w - pad * 2),
+      y: b.y + pad + rand(rng) * Math.max(tile, b.h - pad * 2),
+      type: randChoice(rng, itemTypes),
+      taken: false,
+      buildingId: b.id
+    });
+  }
+  const enemyTypes = ['basic', 'fast', 'dog', 'shooter'];
+  if (rand(rng) < 0.42) {
+    interiorEnemies.push({
+      x: b.x + b.w * 0.25 + rand(rng) * b.w * 0.5,
+      y: b.y + b.h * 0.25 + rand(rng) * b.h * 0.5,
+      type: randChoice(rng, enemyTypes),
+      buildingId: b.id
+    });
+  }
+  if (rand(rng) < 0.15) {
+    interiorEnemies.push({
+      x: b.x + b.w * 0.2 + rand(rng) * b.w * 0.6,
+      y: b.y + b.h * 0.2 + rand(rng) * b.h * 0.6,
+      type: randChoice(rng, enemyTypes),
+      buildingId: b.id
+    });
+  }
+}
+
+function dropVisible(drop, insideB) {
+  return !drop.buildingId || (insideB && drop.buildingId === insideB.id);
+}
+
+function inVisionCone(origin, angle, target, range, fov) {
+  if (dist(origin, target) > range) return false;
+  const a = angleTo(origin, target);
+  let diff = a - angle;
+  while (diff > Math.PI) diff -= TAU;
+  while (diff < -Math.PI) diff += TAU;
+  return Math.abs(diff) <= fov / 2;
+}
+
+function drawBuildingShell(ctx, b, lv, cx, cy) {
+  const bx = b.x - cx, by = b.y - cy, t = lv.tile;
+  const pal = { normal: ['#8a9cb0', '#4a5a6a'], hidden: ['#a09068', '#5a4a30'], command: ['#7a8aa0', '#3a4a5a'], sub: ['#9a8870', '#5a4a38'] };
+  const [main, edge] = pal[b.type] || pal.normal;
+  ctx.fillStyle = edge;
+  ctx.fillRect(bx, by, b.w, t);
+  ctx.fillRect(bx, by + b.h - t, b.w, t);
+  ctx.fillRect(bx, by, t, b.h);
+  ctx.fillRect(bx + b.w - t, by, t, b.h);
+  ctx.fillStyle = main;
+  ctx.fillRect(bx + 3, by + 3, b.w - 6, t - 6);
+  ctx.fillRect(bx + 3, by + b.h - t + 3, b.w - 6, t - 6);
+  ctx.fillRect(bx + 3, by + 3, t - 6, b.h - 6);
+  ctx.fillRect(bx + b.w - t + 3, by + 3, t - 6, b.h - 6);
+  const door = lv.doors.find(d => d.buildingId === b.id && !d.isGate);
+  if (door) {
+    const dx = door.tileC * lv.tile - cx, dy = door.tileR * lv.tile - cy;
+    if (!door.open) {
+      ctx.fillStyle = '#a07840';
+      ctx.fillRect(dx, dy, t, t);
+      ctx.fillStyle = '#d4aa58';
+      ctx.fillRect(dx + 5, dy + 5, t - 10, t - 12);
+      ctx.fillStyle = '#ffd';
+      ctx.beginPath(); ctx.arc(dx + t - 10, dy + t / 2, 3, 0, TAU); ctx.fill();
+    } else {
+      ctx.fillStyle = '#1e242c';
+      ctx.fillRect(dx + 4, dy + 2, t - 8, t - 4);
+    }
+  }
+}
+
+function stampBuilding(grid, tile, rows, cols, bx, by, bw, bh, meta, buildings, doors, loot, interiorEnemies, rng, idRef) {
+  const r0 = Math.floor(by / tile), c0 = Math.floor(bx / tile);
+  const r1 = Math.ceil((by + bh) / tile) - 1;
+  const c1 = Math.ceil((bx + bw) / tile) - 1;
+  const side = meta.doorSide || 'south';
+  let doorR, doorC;
+  if (side === 'south') { doorR = r1; doorC = Math.floor((c0 + c1) / 2); }
+  else if (side === 'north') { doorR = r0; doorC = Math.floor((c0 + c1) / 2); }
+  else if (side === 'east') { doorR = Math.floor((r0 + r1) / 2); doorC = c1; }
+  else { doorR = Math.floor((r0 + r1) / 2); doorC = c0; }
+  for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
+    if (r < 0 || r >= rows || c < 0 || c >= cols) continue;
+    const perim = r === r0 || r === r1 || c === c0 || c === c1;
+    const isDoor = r === doorR && c === doorC;
+    if (perim && !isDoor) grid[r][c] = 6;
+    else if (isDoor) grid[r][c] = 3;
+    else grid[r][c] = 0;
+  }
+  const id = idRef.n++;
+  const b = { id, x: bx, y: by, w: bw, h: bh, type: meta.type || 'normal', interior: [], hasTunnel: meta.hasTunnel || false, hasHospital: meta.hasHospital || false, looted: false, tunnelExit: meta.tunnelExit || null };
+  buildings.push(b);
+  doors.push({ x: doorC * tile + tile / 2, y: doorR * tile + tile / 2, buildingId: id, open: false, tileR: doorR, tileC: doorC });
+  if (meta.type !== 'command') populateBuildingInterior(b, tile, rng, loot, interiorEnemies);
+  else if (meta.lootType) loot.push({ x: bx + bw / 2, y: by + bh / 2, type: meta.lootType, taken: false, buildingId: id });
+  return b;
+}
+
+function playerInBuilding(p, b) {
+  return p.x > b.x + 10 && p.x < b.x + b.w - 10 && p.y > b.y + 10 && p.y < b.y + b.h - 10;
+}
+
+function generateLevel(levelNumber) {
+  const cached = SaveManager.getCachedLevel(levelNumber);
+  if (cached) return cached;
+  const seed = levelNumber * 12345;
+  const rng = mulberry32(seed);
+  const themeKey = THEME_KEYS[levelNumber % 4];
+  const theme = THEMES[themeKey];
+  const isNight = rand(rng) > 0.5;
+  const weatherRoll = rand(rng);
+  const weather = weatherRoll < 0.25 ? 'rain' : weatherRoll < 0.4 ? 'fog' : themeKey === 'desert' && weatherRoll < 0.55 ? 'sandstorm' : 'clear';
+  const weatherDuration = weather !== 'clear' ? randInt(rng, 50000, 110000) : 0;
+  const defenseLayers = 2 + Math.floor(levelNumber / 8);
+  const mapW = 6000 + levelNumber * 250;
+  const mapH = 4500 + levelNumber * 180;
+  const tile = 40;
+  const cols = Math.floor(mapW / tile);
+  const rows = Math.floor(mapH / tile);
+  const grid = Array.from({ length: rows }, () => Array(cols).fill(0));
+  const walls = [];
+  const buildings = [];
+  const doors = [];
+  const loot = [];
+  const savePoints = [];
+  const objectives = [];
+  const patrolCars = [];
+  const searchlights = [];
+  const cameras = [];
+  const antennas = [];
+  const lights = [];
+  const helicopters = [];
+  const interiorEnemies = [];
+  const buildingIdRef = { n: 1 };
+
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    if (r === 0 || c === 0 || r === rows - 1 || c === cols - 1) { grid[r][c] = 1; walls.push({ x: c * tile, y: r * tile, w: tile, h: tile }); }
+  }
+
+  const playerStart = { x: tile * 4, y: mapH / 2 };
+  const mainBase = { x: mapW - tile * 8, y: mapH / 2 - tile * 2, w: tile * 7, h: tile * 6 };
+  const mbR0 = Math.floor(mainBase.y / tile), mbR1 = Math.ceil((mainBase.y + mainBase.h) / tile) - 1;
+  const mbC0 = Math.floor(mainBase.x / tile), mbC1 = Math.ceil((mainBase.x + mainBase.w) / tile) - 1;
+  const gateR = Math.floor((mainBase.y + mainBase.h / 2) / tile);
+  const gateC = mbC0;
+  for (let r = mbR0; r <= mbR1; r++) for (let c = mbC0; c <= mbC1; c++) {
+    if (r < 0 || r >= rows || c < 0 || c >= cols) continue;
+    const perim = r === mbR0 || r === mbR1 || c === mbC0 || c === mbC1;
+    const isGate = c === gateC && Math.abs(r - gateR) <= 1;
+    if (perim && !isGate) grid[r][c] = 1;
+    else grid[r][c] = 0;
+  }
+  const cmdRoom = stampBuilding(grid, tile, rows, cols, mainBase.x + tile, mainBase.y + tile, tile * 4, tile * 3, { type: 'command', doorSide: 'west', lootType: null }, buildings, doors, loot, interiorEnemies, rng, buildingIdRef);
+  cmdRoom.hasCommander = true;
+  doors.push({ x: gateC * tile + tile / 2, y: gateR * tile + tile / 2, buildingId: cmdRoom.id, open: false, tileR: gateR, tileC: gateC, isGate: true });
+
+  for (let i = 0; i < defenseLayers; i++) {
+    const wallY = mainBase.y - (i + 1) * tile * 5;
+    const c1 = Math.floor(mapW * 0.35 / tile), c2 = Math.floor(mapW * 0.88 / tile);
+    const wr = Math.floor(wallY / tile);
+    if (wr > 1 && wr < rows - 2) {
+      for (let c = c1; c < c2; c++) {
+        if (rand(rng) < 0.12) continue;
+        grid[wr][c] = i % 3 === 0 ? 1 : i % 3 === 1 ? 4 : 5;
+      }
+    }
+  }
+
+  for (let i = 0; i < 22 + levelNumber * 2; i++) {
+    const horiz = rand(rng) > 0.45;
+    const wType = randChoice(rng, [1, 4, 5]);
+    const len = randInt(rng, 5, 16);
+    const wr = randInt(rng, 6, rows - 8), wc = randInt(rng, 8, cols - 8);
+    placeWallLine(grid, rows, cols, wr, wc, len, horiz, wType);
+  }
+  for (let band = 1; band <= 4; band++) {
+    const wr = Math.floor(rows * (band * 0.18));
+    const wType = band % 3 === 1 ? 1 : band % 3 === 2 ? 4 : 5;
+    const gap1 = randInt(rng, 10, cols - 30);
+    const gap2 = gap1 + randInt(rng, 12, 20);
+    for (let c = 6; c < cols - 6; c++) {
+      if (Math.abs(c - gap1) < 3 || Math.abs(c - gap2) < 3) continue;
+      if (wr > 2 && wr < rows - 3) grid[wr][c] = wType;
+    }
+  }
+  for (let i = 0; i < 5 + Math.floor(levelNumber / 2); i++) {
+    const vc = randInt(rng, 12, cols - 12);
+    const wType = randChoice(rng, [1, 4, 5]);
+    const gapR = randInt(rng, 8, rows - 12);
+    const len = randInt(rng, 6, 18);
+    placeWallLine(grid, rows, cols, gapR + 5, vc, len, false, wType);
+  }
+
+  const startBuildings = [
+    { x: playerStart.x + tile * 2, y: playerStart.y - tile * 5, w: tile * 3, h: tile * 3, side: 'south' },
+    { x: playerStart.x + tile * 6, y: playerStart.y + tile, w: tile * 3, h: tile * 3, side: 'west' },
+    { x: playerStart.x + tile * 10, y: playerStart.y - tile * 2, w: tile * 4, h: tile * 3, side: 'south' },
+    { x: playerStart.x + tile * 4, y: playerStart.y + tile * 4, w: tile * 3, h: tile * 2, side: 'north' }
+  ];
+  for (const sb of startBuildings) {
+    stampBuilding(grid, tile, rows, cols, sb.x, sb.y, sb.w, sb.h, { type: 'normal', doorSide: sb.side }, buildings, doors, loot, interiorEnemies, rng, buildingIdRef);
+  }
+
+  const pathMain = [];
+  let px = playerStart.x, py = playerStart.y;
+  const steps = 20 + levelNumber;
+  for (let i = 0; i < steps; i++) {
+    pathMain.push({ x: px, y: py });
+    px += (mainBase.x - playerStart.x) / steps + (rand(rng) - 0.5) * 20;
+    py += (mainBase.y - playerStart.y) / steps + (rand(rng) - 0.5) * 30;
+  }
+
+  const numBuildings = 18 + levelNumber;
+  const sides = ['south', 'north', 'east', 'west'];
+  // الگوی grid شهری - ساختمون‌ها در بلوک‌های منظم
+  const blockW = tile * 12, blockH = tile * 10;
+  for (let gx = tile * 10; gx < mapW - tile * 12; gx += blockW) {
+    for (let gy = tile * 5; gy < mapH - tile * 8; gy += blockH) {
+      if (rand(rng) < 0.25) continue; // بعضی بلوک‌ها خالی
+      const bw = tile * (2 + randInt(rng, 1, 3));
+      const bh = tile * (2 + randInt(rng, 1, 3));
+      const bx = gx + tile + randInt(rng, 0, 2) * tile;
+      const by = gy + tile + randInt(rng, 0, 1) * tile;
+      let overlap = false;
+      for (const b of buildings) if (bx < b.x+b.w+tile*2 && bx+bw+tile*2 > b.x && by < b.y+b.h+tile*2 && by+bh+tile*2 > b.y) overlap = true;
+      if (overlap) continue;
+      const isHidden = rand(rng) < 0.12;
+      const hasTunnel = rand(rng) < 0.08;
+      const hasHospital = rand(rng) < 0.1;
+      const b = stampBuilding(grid, tile, rows, cols, bx, by, bw, bh, {
+        type: isHidden ? 'hidden' : 'normal', doorSide: randChoice(rng, sides),
+        hasTunnel, hasHospital
+      }, buildings, doors, loot, interiorEnemies, rng, buildingIdRef);
+      if (isHidden) loot.push({ x: bx+bw/2+10, y: by+bh/2+10, type: randChoice(rng, ['medkit','armor','keycard','radio']), taken: false, buildingId: b.id });
+      if (hasTunnel) b.tunnelExit = { x: mainBase.x - tile*4, y: mainBase.y + randInt(rng,-2,2)*tile };
+      if (hasHospital) objectives.push({ id:'hospital_'+gx, text:'Field Hospital را پیدا کن', done:false, optional:true });
+    }
+  }
+
+  if (rand(rng) < 0.55) {
+    const sbx = mapW * 0.45 + randInt(rng, -6, 6) * tile;
+    const sby = mapH * 0.35 + randInt(rng, -4, 4) * tile;
+    const subB = stampBuilding(grid, tile, rows, cols, sbx, sby, tile * 5, tile * 4, { type: 'sub', doorSide: 'south' }, buildings, doors, loot, interiorEnemies, rng, buildingIdRef);
+    loot.push({ x: sbx + tile * 2.5, y: sby + tile * 2, type: 'medkit', taken: false, buildingId: subB.id });
+    subB.bonus = true;
+    objectives.push({ id: 'subbase', text: 'پایگاه فرعی را فتح کن', done: false, optional: true });
+  }
+
+  objectives.push({ id: 'kill_cmd', text: 'Commander را بکش', done: false, optional: false });
+  objectives.push({ id: 'flag', text: 'پرچم بزن', done: false, optional: false });
+  if (rand(rng) < 0.5) objectives.push({ id: 'antenna', text: 'آنتن رادیو را تخریب کن', done: false, optional: true });
+  if (rand(rng) < 0.4) objectives.push({ id: 'lights', text: 'چراغ‌ها را خاموش کن', done: false, optional: true });
+
+  const numSave = 2 + Math.floor(levelNumber / 5);
+  for (let i = 0; i < numSave; i++) savePoints.push({ x: tile * randInt(rng, 8, cols - 10), y: tile * randInt(rng, 5, rows - 8), used: false });
+
+  for (let i = 0; i < 2 + Math.floor(levelNumber / 4); i++)
+    searchlights.push({ x: randInt(rng, 5, cols - 5) * tile, y: randInt(rng, 3, rows - 5) * tile, angle: rand(rng) * TAU, speed: 0.5 + rand(rng) });
+  for (let i = 0; i < 1 + Math.floor(levelNumber / 6); i++)
+    cameras.push({ x: randInt(rng, 5, cols - 5) * tile, y: randInt(rng, 3, rows - 5) * tile, angle: rand(rng) * TAU, range: 200 });
+  antennas.push({ x: mainBase.x - tile * 2, y: mainBase.y - tile * 3, destroyed: false });
+  for (let i = 0; i < 4 + levelNumber; i++)
+    lights.push({ x: randInt(rng, 5, cols - 5) * tile, y: randInt(rng, 3, rows - 5) * tile, on: true });
+  patrolCars.push({ x: mapW * 0.4, y: mapH * 0.3, path: [{ x: mapW * 0.4, y: mapH * 0.3 }, { x: mapW * 0.6, y: mapH * 0.3 }, { x: mapW * 0.6, y: mapH * 0.5 }, { x: mapW * 0.4, y: mapH * 0.5 }], idx: 0, speed: 1.5 });
+  helicopters.push({ x: -100, y: mapH * 0.3, targetX: mapW + 100, targetY: mapH * 0.3, speed: 2, active: false, hp: 80 });
+
+  const enemySpawns = [];
+  const types = ['basic', 'basic', 'fast', 'tank', 'shooter', 'medic', 'dog'];
+  const count = Math.floor((15 + levelNumber * 3) * DIFF_MULT[SaveManager.load()?.difficulty || 'normal']);
+  enemySpawns.push({ x: cmdRoom.x + cmdRoom.w / 2, y: cmdRoom.y + cmdRoom.h / 2, type: 'commander', patrol: [{ x: cmdRoom.x + cmdRoom.w / 2, y: cmdRoom.y + cmdRoom.h / 2 }] });
+  for (let i = 1; i < count; i++) {
+    const t = randChoice(rng, types);
+    let ex, ey, tries = 0;
+    do {
+      ex = randInt(rng, Math.floor(mapW * 0.5 / tile), cols - 8) * tile;
+      ey = randInt(rng, 4, rows - 6) * tile;
+      tries++;
+    } while (dist({ x: ex, y: ey }, playerStart) < 1400 && tries < 50);
+    const patrol = [];
+    for (let p = 0; p < 4; p++) patrol.push({ x: ex + randInt(rng, -4, 4) * tile, y: ey + randInt(rng, -4, 4) * tile });
+    enemySpawns.push({ x: ex, y: ey, type: t, patrol });
+  }
+
+  const level = { levelNumber, seed, themeKey, theme, isNight, weather, weatherDuration, mapW, mapH, tile, grid, walls, buildings, doors, loot, interiorEnemies, savePoints, objectives, patrolCars, searchlights, cameras, antennas, lights, helicopters, playerStart, mainBase, cmdRoom, enemySpawns, defenseLayers };
+  SaveManager.cacheLevel(levelNumber, level);
+  return level;
+}
+
+// ============ ENTITIES ============
+const WEAPONS = {
+  pistol: { name: 'Pistol', dmg: 25, rate: 300, ammo: 12, maxAmmo: 12, spread: 0.05, speed: 12, reload: 1200, pellets: 1 },
+  shotgun: { name: 'Shotgun', dmg: 15, rate: 800, ammo: 6, maxAmmo: 6, spread: 0.3, speed: 10, reload: 2000, pellets: 5 },
+  smg: { name: 'SMG', dmg: 18, rate: 100, ammo: 30, maxAmmo: 30, spread: 0.1, speed: 11, reload: 1800, pellets: 1 }
+};
+
+class Player {
+  constructor(game) {
+    this.game = game;
+    this.x = 0; this.y = 0;
+    this.angle = 0; this.aimAngle = 0;
+    this.radius = 14;
+    this.maxHp = 100; this.hp = 100;
+    this.speed = 3.5; this.speedMult = 1;
+    this.dashSpeed = 12; this.dashCooldown = 0; this.dashMaxCd = 1500; this.dashCount = 1; this.dashesLeft = 1;
+    this.dashing = false; this.dashTimer = 0;
+    this.weapons = ['pistol', null];
+    this.weaponIdx = 0;
+    this.ammo = { pistol: 12, shotgun: 0, smg: 0 };
+    this.maxAmmo = { pistol: 12, shotgun: 6, smg: 30 };
+    this.lastShot = 0; this.reloading = false; this.reloadTimer = 0;
+    this.grenades = 2; this.grenadeMax = 2;
+    this.inventory = Array(6).fill(null);
+    this.insideBuilding = null;
+    this.armor = 0; this.regen = false; this.silent = false;
+    this.dmgMult = 1; this.fireRateMult = 1; this.ammoMult = 1; this.pierce = false;
+    this.radar = false; this.extraSave = 0;
+    this.hasGhost = false; this.invisible = false;
+    this.usedSavePoint = false;
+    this.alive = true;
+  }
+  get weapon() { return WEAPONS[this.weapons[this.weaponIdx]]; }
+  get curAmmo() { return this.ammo[this.weapons[this.weaponIdx]]; }
+  applyUpgrades(upgrades) {
+    upgrades.forEach(id => { const u = UPGRADES.find(x => x.id === id); if (u) u.apply(this); });
+    if (this.silent && this.dashCount >= 2) this.hasGhost = true;
+    this.dashesLeft = this.dashCount;
+  }
+  update(dt) {
+    if (!this.alive) return;
+    const g = this.game;
+  }
+}
+
+class Enemy {
+  constructor(x, y, type, patrol) {
+    this.x = x; this.y = y; this.type = type;
+    this.angle = 0; this.aimAngle = 0;
+    this.alive = true;
+    this.patrol = patrol || [];
+    this.patrolIdx = 0;
+    this.state = 'patrol';
+    this.alert = false;
+    this.confused = false;
+    this.stuckTimer = 0;
+    this.lastRadio = Date.now();
+    this.lastShot = 0;
+    this.heardSound = null;
+    this.visionAngle = 130 * Math.PI / 180;
+    const stats = { basic: { hp: 50, speed: 2, dmg: 10, radius: 12, range: 0 }, fast: { hp: 25, speed: 4.5, dmg: 8, radius: 10, range: 0 }, tank: { hp: 150, speed: 1.2, dmg: 20, radius: 18, range: 0 }, shooter: { hp: 40, speed: 1.8, dmg: 12, radius: 12, range: 350 }, commander: { hp: 200, speed: 1.5, dmg: 15, radius: 20, range: 300 }, medic: { hp: 35, speed: 2.5, dmg: 5, radius: 11, range: 0 }, dog: { hp: 20, speed: 5, dmg: 15, radius: 8, range: 0 } };
+    const s = stats[type] || stats.basic;
+    this.maxHp = s.hp; this.hp = s.hp; this.speed = s.speed; this.dmg = s.dmg; this.radius = s.radius; this.shootRange = s.range;
+    this.guards = type === 'commander' ? 2 : 0;
+  }
+}
+
+class Bullet {
+  constructor(x, y, angle, speed, dmg, owner, pierce) {
+    this.x = x; this.y = y; this.angle = angle; this.speed = speed; this.dmg = dmg;
+    this.owner = owner; this.pierce = pierce; this.alive = true; this.life = 120;
+    this.vx = Math.cos(angle) * speed; this.vy = Math.sin(angle) * speed;
+  }
+}
+
+class Grenade {
+  constructor(x, y, targetX, targetY, isC4) {
+    this.x = x; this.y = y; this.tx = targetX; this.ty = targetY;
+    this.isC4 = isC4; this.timer = isC4 ? 2000 : 1500; this.alive = true;
+    const d = dist({ x, y }, { x: targetX, y: targetY });
+    this.vx = (targetX - x) / d * 5; this.vy = (targetY - y) / d * 5;
+  }
+}
+
+// ============ RAYCAST & COLLISION ============
+function isSolid(v) { return v === 1 || v === 2 || v === 3 || v === 4 || v === 5 || v === 6; }
+
+function raycast(x1, y1, x2, y2, grid, tile, cols, rows) {
+  const dx = x2 - x1, dy = y2 - y1;
+  const len = Math.hypot(dx, dy);
+  if (len < 1) return true;
+  const steps = Math.ceil(len / (tile / 2));
+  for (let i = 1; i <= steps; i++) {
+    const t = i / steps;
+    const cx = Math.floor((x1 + dx * t) / tile);
+    const cy = Math.floor((y1 + dy * t) / tile);
+    if (cy < 0 || cy >= rows || cx < 0 || cx >= cols) return false;
+    if (isSolid(grid[cy][cx])) return false;
+  }
+  return true;
+}
+
+function canSee(e, target, game) {
+  const lv = game.level;
+  const d = dist(e, target);
+  const maxRange = (e.state === 'chase' || e.alert) ? 650 : 350;
+  if (d > maxRange) return false;
+  const fullVision = e.state === 'chase' || e.alert;
+  const ang = angleTo(e, target);
+  let diff = ang - e.angle;
+  while (diff > Math.PI) diff -= TAU;
+  while (diff < -Math.PI) diff += TAU;
+  if (!fullVision && Math.abs(diff) > e.visionAngle / 2) return false;
+  return raycast(e.x, e.y, target.x, target.y, lv.grid, lv.tile, Math.floor(lv.mapW / lv.tile), Math.floor(lv.mapH / lv.tile));
+}
+
+function moveWithCollision(ent, nx, ny, lv) {
+  if (!isSolid(getTileAt(nx, ent.y, lv))) ent.x = nx;
+  if (!isSolid(getTileAt(ent.x, ny, lv))) ent.y = ny;
+}
+
+function collideCircleRect(cx, cy, r, rx, ry, rw, rh) {
+  const nx = clamp(cx, rx, rx + rw), ny = clamp(cy, ry, ry + rh);
+  return Math.hypot(cx - nx, cy - ny) < r;
+}
+
+function getTileAt(x, y, lv) {
+  const c = Math.floor(x / lv.tile), r = Math.floor(y / lv.tile);
+  if (r < 0 || r >= lv.grid.length || c < 0 || c >= lv.grid[0].length) return 1;
+  return lv.grid[r][c];
+}
+
+// ============ MAIN GAME ============
+class Game {
+  constructor() {
+    this.canvas = document.getElementById('gameCanvas');
+    this.ctx = this.canvas.getContext('2d');
+    this.minimap = document.getElementById('minimap');
+    this.mmCtx = this.minimap.getContext('2d');
+    this.audio = new AudioManager();
+    this.messages = new MessageEngine();
+    this.state = 'setup';
+    this.paused = false;
+    this.keys = {};
+    this.mouse = { x: 0, y: 0, down: false };
+    this.camera = { x: 0, y: 0 };
+    this.bullets = [];
+    this.grenades = [];
+    this.particles = [];
+    this.enemies = [];
+    this.drops = [];
+    this.alertLevel = 1;
+    this.alertDecay = 0;
+    this.idleTime = 0;
+    this.justKilled = false;
+    this.justLooted = false;
+    this.missionComplete = false;
+    this.flagRaised = false;
+    this.flagAnim = 0;
+    this.stats = { shots: 0, hits: 0, kills: 0, damageTaken: 0, startHp: 100, objectivesDone: 0 };
+    this.startTime = 0;
+    this.saveData = SaveManager.load() || { playerName: 'سرباز', totalLevels: 10, difficulty: 'normal', intel: 0, upgrades: [], stars: {}, unlocked: 1, tutorialDone: false };
+    this.selectedLevel = 1;
+    this.preShopBuy = null;
+    this.preUpgradePick = null;
+    this.postUpgradePick = null;
+    this.tutorialPage = 0;
+    this.resize();
+    this.bindEvents();
+    this.loop = this.loop.bind(this);
+    requestAnimationFrame(this.loop);
+  }
+
+  resize() {
+    this.canvas.width = window.innerWidth;
+    this.canvas.height = window.innerHeight;
+    this.W = this.canvas.width; this.H = this.canvas.height;
+  }
+
+  bindEvents() {
+    window.addEventListener('resize', () => this.resize());
+    window.addEventListener('blur', () => { this.keys = {}; this.mouse.down = false; });
+    window.addEventListener('keydown', e => {
+      this.keys[e.code] = true;
+      if (e.code === 'Escape' && this.state === 'game') this.togglePause();
+      if (e.code === 'Tab') e.preventDefault();
+      if (this.state === 'game' && !this.paused) this.handleKey(e.code);
+    });
+    window.addEventListener('keyup', e => { this.keys[e.code] = false; });
+    this.canvas.addEventListener('mousemove', e => {
+      const rect = this.canvas.getBoundingClientRect();
+      this.mouse.x = e.clientX - rect.left + this.camera.x;
+      this.mouse.y = e.clientY - rect.top + this.camera.y;
+    });
+    this.canvas.addEventListener('mousedown', () => { this.mouse.down = true; });
+    this.canvas.addEventListener('mouseup', () => { this.mouse.down = false; });
+
+    document.getElementById('levelCount').oninput = e => document.getElementById('levelCountVal').textContent = e.target.value;
+    document.getElementById('btnNewGame').onclick = () => this.newGame();
+    document.getElementById('btnContinue').onclick = () => this.continueGame();
+    document.getElementById('btnTutPrev').onclick = () => { if (this.tutorialPage > 0) { this.tutorialPage--; this.showTutorial(); } };
+    document.getElementById('btnTutNext').onclick = () => {
+      if (this.tutorialPage < TUTORIAL_SLIDES.length - 1) { this.tutorialPage++; this.showTutorial(); }
+      else { this.saveData.tutorialDone = true; SaveManager.save(this.saveData); this.showScreen('levelSelect'); this.buildLevelSelect(); }
+    };
+    document.getElementById('btnHowToPlay').onclick = () => { this.tutorialPage = 0; this.showTutorial(); this.showScreen('tutorial'); };
+    document.getElementById('btnQuitSetup').onclick = () => this.showScreen('setup');
+    document.getElementById('btnStartMission').onclick = () => this.startMission();
+    document.getElementById('btnPreBack').onclick = () => { this.showScreen('levelSelect'); this.buildLevelSelect(); };
+    document.getElementById('btnNextLevel').onclick = () => this.nextLevel();
+    document.getElementById('btnPostLevelSelect').onclick = () => { this.showScreen('levelSelect'); this.buildLevelSelect(); };
+    document.getElementById('btnResume').onclick = () => this.togglePause();
+    document.getElementById('btnRestart').onclick = () => { this.paused = false; document.getElementById('pauseOverlay').classList.add('hidden'); this.startMission(); };
+    document.getElementById('btnPauseLevelSelect').onclick = () => { this.paused = false; document.getElementById('pauseOverlay').classList.add('hidden'); this.showScreen('levelSelect'); this.buildLevelSelect(); };
+    document.getElementById('btnPauseHowTo').onclick = () => { this.tutorialPage = 0; this.showTutorial(); this.showScreen('tutorial'); };
+    document.getElementById('btnSettings').onclick = () => {
+      this.audio.muted = !this.audio.muted;
+      // پاک کردن cache مراحل برای اعمال تغییرات
+      for(let i=1;i<=50;i++) localStorage.removeItem('levelCache_v5_'+i);
+      alert(this.audio.muted ? 'صدا خاموش (cache پاک شد)' : 'صدا روشن (cache پاک شد)');
+    };
+    document.getElementById('btnPauseQuit').onclick = () => { this.paused = false; this.showScreen('setup'); };
+  }
+
+  showScreen(name) {
+    ['setup', 'tutorial', 'levelSelect', 'preMission', 'postMission'].forEach(s => {
+      document.getElementById(s + 'Screen').classList.toggle('hidden', s !== name);
+    });
+    this.state = name === 'game' ? 'game' : name;
+    this.canvas.style.display = name === 'game' ? 'block' : 'none';
+    document.getElementById('minimap').style.display = name === 'game' ? 'block' : 'none';
+  }
+
+  newGame() {
+    this.saveData = {
+      playerName: document.getElementById('playerName').value || 'سرباز',
+      totalLevels: +document.getElementById('levelCount').value,
+      difficulty: document.getElementById('difficulty').value,
+      intel: 0, upgrades: [], stars: {}, unlocked: 1, tutorialDone: false
+    };
+    SaveManager.save(this.saveData);
+    this.tutorialPage = 0;
+    this.showTutorial();
+    this.showScreen('tutorial');
+  }
+
+  continueGame() {
+    const s = SaveManager.load();
+    if (!s) { alert('ذخیره‌ای نیست!'); return; }
+    this.saveData = s;
+    document.getElementById('playerName').value = s.playerName;
+    if (s.tutorialDone) { this.showScreen('levelSelect'); this.buildLevelSelect(); }
+    else { this.tutorialPage = 0; this.showTutorial(); this.showScreen('tutorial'); }
+  }
+
+  showTutorial() {
+    const slide = TUTORIAL_SLIDES[this.tutorialPage];
+    document.getElementById('tutorialContent').innerHTML = `<div class="tutorial-icon">${slide.icon}</div><h3>${slide.title}</h3><p class="tutorial-text">${slide.text}</p>`;
+    document.getElementById('tutorialDots').innerHTML = TUTORIAL_SLIDES.map((_, i) => `<div class="dot ${i === this.tutorialPage ? 'active' : ''}"></div>`).join('');
+    document.getElementById('btnTutNext').textContent = this.tutorialPage === TUTORIAL_SLIDES.length - 1 ? 'شروع!' : 'بعدی';
+  }
+
+  buildLevelSelect() {
+    document.getElementById('intelDisplay').textContent = this.saveData.intel;
+    const grid = document.getElementById('levelGrid');
+    grid.innerHTML = '';
+    for (let i = 1; i <= this.saveData.totalLevels; i++) {
+      const locked = i > this.saveData.unlocked;
+      const stars = this.saveData.stars[i] || 0;
+      const btn = document.createElement('button');
+      btn.className = 'level-btn' + (locked ? ' locked' : '');
+      btn.innerHTML = `مرحله ${i}<br><span class="stars">${'★'.repeat(stars)}${'☆'.repeat(5 - stars)}</span>`;
+      if (!locked) btn.onclick = () => { this.selectedLevel = i; this.showPreMission(); };
+      grid.appendChild(btn);
+    }
+  }
+
+  showPreMission() {
+    this.showScreen('preMission');
+    this.level = generateLevel(this.selectedLevel);
+    const pc = document.getElementById('preMapCanvas');
+    const pctx = pc.getContext('2d');
+    pctx.fillStyle = this.level.theme.floor;
+    pctx.fillRect(0, 0, 300, 200);
+    pctx.fillStyle = '#f44';
+    pctx.fillRect(10, 90, 8, 8);
+    pctx.fillStyle = '#fa0';
+    pctx.fillRect(280, 90, 12, 12);
+    pctx.fillStyle = '#888';
+    this.level.buildings.forEach(b => pctx.fillRect(b.x / this.level.mapW * 280 + 10, b.y / this.level.mapH * 180 + 10, b.w / this.level.mapW * 280, b.h / this.level.mapH * 180));
+    document.getElementById('objectivesList').innerHTML = '<h3>اهداف:</h3>' + this.level.objectives.map(o => `<div class="stat-row"><span>${o.text}</span><span>${o.optional ? '(اختیاری)' : '(اجباری)'}</span></div>`).join('');
+    const shop = document.getElementById('preShop');
+    shop.innerHTML = '';
+    PRE_SHOP.forEach(item => {
+      const card = document.createElement('div');
+      card.className = 'upgrade-card';
+      card.innerHTML = `<b>${item.name}</b><br>${item.desc}<br>💎 ${item.cost}`;
+      if (this.saveData.intel >= item.cost) card.onclick = () => { this.preShopBuy = item.id; shop.querySelectorAll('.upgrade-card').forEach(c => c.style.borderColor = ''); card.style.borderColor = '#4af'; };
+      else card.style.opacity = '0.5';
+      shop.appendChild(card);
+    });
+    this.showUpgradeChoices('preUpgrades', 3, id => { this.preUpgradePick = id; });
+    this.pregenerateNext();
+  }
+
+  showUpgradeChoices(containerId, count, onPick) {
+    const container = document.getElementById(containerId);
+    container.innerHTML = '';
+    const avail = UPGRADES.filter(u => !this.saveData.upgrades.includes(u.id));
+    const picks = [];
+    const pool = [...avail];
+    for (let i = 0; i < Math.min(count, pool.length); i++) {
+      const idx = Math.floor(Math.random() * pool.length);
+      picks.push(pool.splice(idx, 1)[0]);
+    }
+    picks.forEach(u => {
+      const card = document.createElement('div');
+      card.className = 'upgrade-card';
+      card.innerHTML = `${u.icon}<br><b>${u.name}</b>`;
+      card.onclick = () => { onPick(u.id); container.querySelectorAll('.upgrade-card').forEach(c => c.style.borderColor = ''); card.style.borderColor = '#4af'; };
+      container.appendChild(card);
+    });
+  }
+
+  pregenerateNext() {
+    const next = this.selectedLevel + 1;
+    if (next <= this.saveData.totalLevels) {
+      document.getElementById('generatingMsg').style.display = 'block';
+      setTimeout(() => { generateLevel(next); document.getElementById('generatingMsg').style.display = 'none'; }, 500);
+    }
+  }
+
+  startMission() {
+    if (this.preShopBuy) {
+      const item = PRE_SHOP.find(s => s.id === this.preShopBuy);
+      if (item && this.saveData.intel >= item.cost) { this.saveData.intel -= item.cost; SaveManager.save(this.saveData); }
+    }
+    if (this.preUpgradePick && !this.saveData.upgrades.includes(this.preUpgradePick)) {
+      this.saveData.upgrades.push(this.preUpgradePick);
+      SaveManager.save(this.saveData);
+    }
+    this.audio.init();
+    this.showScreen('game');
+    this.paused = false;
+    this.level = generateLevel(this.selectedLevel);
+    this.isNight = this.level.isNight;
+    this.weather = this.level.weather;
+    this.weatherEndTime = this.level.weatherDuration ? Date.now() + this.level.weatherDuration : 0;
+    this.player = new Player(this);
+    this.player.x = this.level.playerStart.x;
+    this.player.y = this.level.playerStart.y;
+    this.player.applyUpgrades(this.saveData.upgrades);
+    if (this.preShopBuy === 'shotgun') { this.player.weapons[1] = 'shotgun'; this.player.ammo.shotgun = 6; }
+    if (this.preShopBuy === 'smg') { this.player.weapons[1] = 'smg'; this.player.ammo.smg = 30; }
+    if (this.preShopBuy === 'armor_start') { this.player.maxHp *= 1.3; this.player.hp = this.player.maxHp; }
+    if (this.preShopBuy === 'ammo_start') { Object.keys(this.player.ammo).forEach(k => this.player.ammo[k] = Math.floor(this.player.ammo[k] * 1.5)); }
+    this.preShopBuy = null; this.preUpgradePick = null;
+    this.enemies = this.level.enemySpawns.map(s => new Enemy(s.x, s.y, s.type, s.patrol));
+    for (const ie of (this.level.interiorEnemies || [])) {
+      const e = new Enemy(ie.x, ie.y, ie.type, []);
+      e.interiorBuildingId = ie.buildingId;
+      e.angle = Math.random() * TAU;
+      this.enemies.push(e);
+    }
+    this.bullets = []; this.grenades = []; this.particles = [];
+    this.alertLevel = 1; this.missionComplete = false; this.flagRaised = false; this.flagAnim = 0;
+    this.stats = { shots: 0, hits: 0, kills: 0, damageTaken: 0, startHp: this.player.hp, objectivesDone: 0 };
+    this.startTime = Date.now();
+    this.player.usedSavePoint = false;
+    this.selectedInvSlot = 0;
+    this.drops = this.level.loot.filter(l => !l.taken).map(l => ({ ...l }));
+    this.searchlights = this.level.searchlights.map(s => ({ ...s }));
+    this.cameras = this.level.cameras.map(c => ({ ...c }));
+    this.antennas = this.level.antennas.map(a => ({ ...a }));
+    this.lights = this.level.lights.map(l => ({ ...l }));
+    this.helicopters = this.level.helicopters.map(h => ({ ...h }));
+    this.patrolCars = this.level.patrolCars.map(c => ({ ...c, x: c.path[0].x, y: c.path[0].y }));
+    this.commanderDead = false;
+    this.lastMoveX = this.player.x; this.lastMoveY = this.player.y;
+    this.missionStartTime = Date.now();
+    this.enemies.forEach(e => { e.state = 'patrol'; e.alert = false; e.angle = Math.random() * TAU; });
+    this.audio.setAlertSpeed(this.alertLevel);
+  }
+
+  togglePause() {
+    this.paused = !this.paused;
+    if (!this.paused) this.lastTs = null; // reset تا dt اشتباه نشه
+    document.getElementById('pauseOverlay').classList.toggle('hidden', !this.paused);
+  }
+
+  handleKey(code) {
+    const p = this.player;
+    if (code === 'KeyE') this.interact();
+    if (code === 'KeyR' && !p.reloading) this.startReload();
+    if (code === 'KeyG') this.throwGrenade();
+    if (code === 'Digit1') p.weaponIdx = 0;
+    if (code === 'Digit2' && p.weapons[1]) p.weaponIdx = 1;
+    if (code === 'Space' && p.dashCooldown <= 0 && p.dashesLeft > 0) this.dash();
+    if (code === 'KeyC') this.tryCraft();
+    if (code === 'KeyF') { if (!p.alive) this.startMission(); else this.pickupNearby(); }
+    if (code === 'Tab') { this.selectedInvSlot = (this.selectedInvSlot + 1) % 6; }
+    if (code === 'KeyQ') this.useInventoryItem();
+  }
+
+  useInventoryItem() {
+    const p = this.player;
+    const idx = this.selectedInvSlot;
+    const item = p.inventory[idx];
+    if (!item) { this.messages.show('این خونه خالیه — Tab برای تعویض slot'); return; }
+    const actions = {
+      health:  () => { p.hp = Math.min(p.maxHp, p.hp+30); return 'Health Pack استفاده شد 💊'; },
+      medkit:  () => { p.hp = p.maxHp; return 'Medkit — HP کامل شد ❤️'; },
+      armor:   () => { p.armor = Math.min(0.5, (p.armor||0)+0.1); return 'Armor اعمال شد 🛡️'; },
+      meat:    () => { this.messages.show('گوشت رو با G پرتاب کن نزدیک سگ'); return null; }
+    };
+    const act = actions[item.type];
+    if (!act) { this.messages.show(`${item.type} — فقط با E یا C استفاده میشه`); return; }
+    const msg = act();
+    item.count--; if(item.count<=0) p.inventory[idx]=null;
+    this.audio.pickup();
+    if(msg) this.messages.show(msg);
+  }
+
+  dash() {
+    const p = this.player;
+    p.dashing = true; p.dashTimer = 200; p.dashCooldown = p.dashMaxCd; p.dashesLeft--;
+    p.dashAngle = p.aimAngle;
+    this.audio.dash();
+    if (p.hasGhost) p.invisible = true;
+    setTimeout(() => { p.invisible = false; }, 500);
+  }
+
+  startReload() {
+    const p = this.player;
+    const w = p.weapons[p.weaponIdx];
+    if (!w || p.ammo[w] === WEAPONS[w].maxAmmo * p.ammoMult) return;
+    p.reloading = true; p.reloadTimer = WEAPONS[w].reload;
+    this.audio.reload();
+  }
+
+  throwGrenade() {
+    const p = this.player;
+    if (p.grenades <= 0) return;
+    p.grenades--;
+    this.grenades.push(new Grenade(p.x, p.y, this.mouse.x, this.mouse.y, false));
+  }
+
+  interact() {
+    const p = this.player;
+    let nearDoor = null, nearDist = 72;
+    for (const d of this.level.doors) {
+      const dd = dist(p, d);
+      if (dd < nearDist) { nearDoor = d; nearDist = dd; }
+    }
+    if (nearDoor) {
+      nearDoor.open = !nearDoor.open;
+      const lv = this.level;
+      if (nearDoor.isGate) {
+        for (let dr = -1; dr <= 1; dr++) {
+          const r = nearDoor.tileR + dr;
+          if (r >= 0 && r < lv.grid.length) lv.grid[r][nearDoor.tileC] = nearDoor.open ? 0 : 1;
+        }
+      } else {
+        lv.grid[nearDoor.tileR][nearDoor.tileC] = nearDoor.open ? 0 : 3;
+      }
+      this.audio.door();
+      return;
+    }
+    if (this.commanderDead && !this.flagRaised && dist(p, this.level.cmdRoom) < 60) {
+      this.flagRaised = true; this.flagAnim = 0; this.audio.flag();
+      const obj = this.level.objectives.find(o => o.id === 'flag');
+      if (obj) obj.done = true;
+      setTimeout(() => this.endMission(), 2000);
+    }
+    for (const e of this.enemies) {
+      if (!e.alive && e.hasRadio && dist(p, e) < 30) {
+        e.hasRadio = false;
+        p.inventory[0] = p.inventory[0] || { type: 'radio', count: 1 };
+        this.messages.show('رادیو گرفتی! false alarm بزن با E دوباره');
+      }
+    }
+    for (const sp of this.level.savePoints) {
+      if (dist(p, sp) < 35 && !sp.used) { this.saveCheckpoint(); sp.used = true; p.usedSavePoint = true; return; }
+    }
+    if (p.inventory.some(it => it && it.type === 'c4')) this.placeC4();
+    for (const ant of this.antennas) {
+      if (!ant.destroyed && dist(p, ant) < 40) { ant.destroyed = true; for (const e of this.enemies) if (e.alive) e.confused = true; const obj = this.level.objectives.find(o => o.id === 'antenna'); if (obj) obj.done = true; }
+    }
+    for (const l of this.lights) {
+      if (l.on && dist(p, l) < 35) { l.on = false; const obj = this.level.objectives.find(o => o.id === 'lights'); if (obj) obj.done = true; }
+    }
+  }
+
+  pickupNearby() {
+    const p = this.player;
+    let best = -1, bestD = 48;
+    for (let i = 0; i < this.drops.length; i++) {
+      const drop = this.drops[i];
+      if (!dropVisible(drop, p.insideBuilding)) continue;
+      const d = dist(p, drop);
+      if (d < bestD) { best = i; bestD = d; }
+    }
+    if (best >= 0) {
+      this.pickupItem(this.drops[best]);
+      this.drops.splice(best, 1);
+    } else {
+      this.messages.show('آیتمی نزدیکت نیست — داخل ساختمان برو و نزدیک لوت بایست');
+    }
+  }
+
+  pickupItem(drop) {
+    const p = this.player;
+    const types = { health: () => { p.hp = Math.min(p.maxHp, p.hp + 30); }, ammo: () => { Object.keys(p.ammo).forEach(k => { if (p.ammo[k] > 0) p.ammo[k] = Math.min(p.maxAmmo[k] * p.ammoMult, p.ammo[k] + 10); }); }, grenade: () => { p.grenades = Math.min(p.grenadeMax, p.grenades + 1); }, medkit: () => { p.hp = p.maxHp; }, armor: () => { p.armor = Math.min(0.5, p.armor + 0.1); }, keycard: () => {}, radio: () => {}, meat: () => {} };
+    if (types[drop.type]) types[drop.type]();
+    this.addToInventory(drop.type);
+    this.audio.pickup();
+    this.justLooted = true;
+    this.saveData.intel += 5;
+  }
+
+  addToInventory(type) {
+    const p = this.player;
+    for (let i = 0; i < 6; i++) {
+      if (p.inventory[i] && p.inventory[i].type === type) { p.inventory[i].count++; return; }
+    }
+    for (let i = 0; i < 6; i++) {
+      if (!p.inventory[i]) { p.inventory[i] = { type, count: 1 }; return; }
+    }
+  }
+
+  tryCraft() {
+    const p = this.player;
+    const inv = p.inventory;
+    const findPair = (type) => {
+      const idxs = [];
+      for (let i = 0; i < 6; i++) if (inv[i] && inv[i].type === type) idxs.push(i);
+      if (idxs.length >= 2) {
+        inv[idxs[0]].count--;
+        if (inv[idxs[0]].count <= 0) inv[idxs[0]] = null;
+        inv[idxs[1]].count--;
+        if (inv[idxs[1]].count <= 0) inv[idxs[1]] = null;
+        return true;
+      }
+      return false;
+    };
+    if (findPair('health')) { p.hp = Math.min(p.maxHp, p.hp + 60); this.messages.show('Medkit ساختی! 🏥'); this.audio.pickup(); }
+    else if (findPair('grenade')) { inv[0] = inv[0] || { type: 'c4', count: 1 }; if (inv[0].type === 'c4') inv[0].count++; else { for (let i = 0; i < 6; i++) if (!inv[i]) { inv[i] = { type: 'c4', count: 1 }; break; } } this.messages.show('C4 ساختی! روی دیوار بذار با E'); }
+  }
+
+  placeC4() {
+    const p = this.player;
+    const lv = this.level;
+    const tx = Math.floor(p.x / lv.tile), ty = Math.floor(p.y / lv.tile);
+    for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+      const r = ty + dr, c = tx + dc;
+      if (r >= 0 && r < lv.grid.length && c >= 0 && c < lv.grid[0].length && lv.grid[r][c] === 1) {
+        lv.grid[r][c] = 0;
+        this.grenades.push(new Grenade(p.x, p.y, c * lv.tile + lv.tile / 2, r * lv.tile + lv.tile / 2, true));
+        for (let i = 0; i < 6; i++) if (p.inventory[i] && p.inventory[i].type === 'c4') { p.inventory[i].count--; if (p.inventory[i].count <= 0) p.inventory[i] = null; break; }
+        return;
+      }
+    }
+  }
+
+  saveCheckpoint() {
+    SaveManager.save({ ...this.saveData, checkpoint: { level: this.selectedLevel, player: { x: this.player.x, y: this.player.y, hp: this.player.hp, ammo: { ...this.player.ammo }, inventory: [...this.player.inventory] } } });
+    this.messages.show('ذخیره شد! 💾');
+  }
+
+  updatePlayer(dt) {
+    const p = this.player;
+    if (!p.alive) return;
+    let mx = 0, my = 0;
+    if (this.keys['KeyW']) my -= 1;
+    if (this.keys['KeyS']) my += 1;
+    if (this.keys['KeyA']) mx -= 1;
+    if (this.keys['KeyD']) mx += 1;
+    if (mx || my) {
+      const len = Math.hypot(mx, my);
+      mx /= len; my /= len;
+      this.idleTime = 0;
+    } else this.idleTime += dt;
+
+    p.aimAngle = angleTo(p, this.mouse);
+    if (!p.dashing) p.angle = p.aimAngle;
+
+    const speed = p.dashing ? p.dashSpeed : p.speed * p.speedMult * (p.silent ? 0.7 : 1);
+    let nx = p.x, ny = p.y;
+    if (p.dashing) { nx += Math.cos(p.dashAngle) * speed; ny += Math.sin(p.dashAngle) * speed; }
+    else { nx += mx * speed; ny += my * speed; }
+
+    moveWithCollision(p, nx, ny, this.level);
+    p.x = clamp(p.x, p.radius, this.level.mapW - p.radius);
+    p.y = clamp(p.y, p.radius, this.level.mapH - p.radius);
+
+    if (p.dashing) { p.dashTimer -= dt; if (p.dashTimer <= 0) p.dashing = false; }
+    if (p.dashCooldown > 0) p.dashCooldown -= dt;
+    if (p.dashCooldown <= 0) p.dashesLeft = p.dashCount;
+
+    if (p.reloading) {
+      p.reloadTimer -= dt;
+      if (p.reloadTimer <= 0) {
+        p.reloading = false;
+        const w = p.weapons[p.weaponIdx];
+        p.ammo[w] = Math.floor(WEAPONS[w].maxAmmo * p.ammoMult);
+      }
+    }
+
+    if (p.regen && p.hp < p.maxHp) p.hp = Math.min(p.maxHp, p.hp + dt * 0.005);
+
+    p.insideBuilding = null;
+    for (const b of this.level.buildings) {
+      if (playerInBuilding(p, b)) p.insideBuilding = b;
+    }
+
+    if (this.mouse.down) this.fireBullet();
+    if (mx || my || p.dashing) {
+      const noise = p.silent ? 0.1 : p.dashing ? 0.8 : 0.3;
+      if (noise > 0.2 && !p.invisible) this.makeNoise(p.x, p.y, p.silent ? 40 : p.dashing ? 85 : 55);
+    }
+  }
+
+  fireBullet() {
+    const p = this.player;
+    if (!p.alive || p.reloading) return;
+    const wn = p.weapons[p.weaponIdx];
+    if (!wn) return;
+    const w = WEAPONS[wn];
+    const now = Date.now();
+    if (now - p.lastShot < w.rate / p.fireRateMult) return;
+    if (p.ammo[wn] <= 0) return;
+    p.lastShot = now; p.ammo[wn]--;
+    this.stats.shots++;
+    this.audio.shoot(wn);
+    const gunNoise = { pistol: 100, shotgun: 140, smg: 85 };
+    this.makeNoise(p.x, p.y, gunNoise[wn] || 120);
+    this.raiseAlert(0.35);
+    for (let i = 0; i < w.pellets; i++) {
+      const spread = (Math.random() - 0.5) * w.spread;
+      this.bullets.push(new Bullet(p.x, p.y, p.aimAngle + spread, w.speed, w.dmg * p.dmgMult, 'player', p.pierce));
+    }
+  }
+
+  makeNoise(x, y, radius) {
+    const lv = this.level;
+    const cols = Math.floor(lv.mapW / lv.tile), rows = Math.floor(lv.mapH / lv.tile);
+    for (const e of this.enemies) {
+      if (!e.alive) continue;
+      const hearRange = e.type === 'dog' ? radius * 1.35 : radius;
+      if (dist(e, { x, y }) > hearRange) continue;
+      if (!raycast(x, y, e.x, e.y, lv.grid, lv.tile, cols, rows)) continue;
+      e.heardSound = { x, y };
+      if (e.state === 'patrol' || e.state === 'investigate') { e.state = 'investigate'; e.investigateStart = Date.now(); }
+    }
+  }
+
+  raiseAlert(amount) {
+    this.alertLevel = clamp(this.alertLevel + amount, 1, 5);
+    this.alertDecay = 0;
+    this.audio.setAlertSpeed(this.alertLevel);
+    if (this.alertLevel >= 3 && Math.random() < 0.02) this.spawnReinforcement();
+    if (this.alertLevel >= 4 && !this.helicopters[0]?.active) { this.helicopters[0].active = true; this.helicopters[0].x = -100; }
+  }
+
+  spawnReinforcement() {
+    const lv = this.level;
+    const x = this.player.x + (Math.random() - 0.5) * 400;
+    const y = this.player.y + (Math.random() - 0.5) * 400;
+    this.enemies.push(new Enemy(clamp(x, 100, lv.mapW - 100), clamp(y, 100, lv.mapH - 100), 'basic', []));
+  }
+
+  updateEnemies(dt) {
+    const p = this.player;
+    const lv = this.level;
+    const cols = Math.floor(lv.mapW / lv.tile), rows = Math.floor(lv.mapH / lv.tile);
+    for (const e of this.enemies) {
+      if (!e.alive) continue;
+      if (e.interiorBuildingId) {
+        const inside = p.insideBuilding;
+        if (!inside || inside.id !== e.interiorBuildingId) { e.angle += dt * 0.0008; continue; }
+      }
+      if (e.confused) { e.angle += dt * 0.002; if (Math.random() < 0.01) e.confused = false; continue; }
+
+      const grace = Date.now() - this.missionStartTime < 3500;
+      const sees = !grace && !p.invisible && canSee(e, p, this);
+      if (sees) {
+        e.lastKnownPos = { x: p.x, y: p.y };
+        e.lastSeenTime = Date.now();
+        e.state = 'chase';
+        e.alert = true;
+      } else if (e.state === 'chase') {
+        if (!e.lastSeenTime || Date.now() - e.lastSeenTime > 3500) {
+          e.state = e.lastKnownPos ? 'investigate' : 'patrol';
+          e.alert = false;
+          if (e.lastKnownPos) e.heardSound = { x: e.lastKnownPos.x, y: e.lastKnownPos.y };
+          e.lastKnownPos = null;
+        }
+      } else if (e.heardSound) {
+        e.state = 'investigate';
+        if (e.investigateStart && Date.now() - e.investigateStart > 6000) { e.heardSound = null; e.state = 'patrol'; e.alert = false; }
+      }
+
+      if (e.state === 'investigate' && e.heardSound && !e.investigateStart) e.investigateStart = Date.now();
+      if (e.state !== 'investigate') e.investigateStart = 0;
+
+      if (e.state === 'patrol' && e.patrol.length > 0) {
+        const target = e.patrol[e.patrolIdx];
+        const d = dist(e, target);
+        if (d < 15) { e.patrolIdx = (e.patrolIdx + 1) % e.patrol.length; e.stuckTimer = 0; }
+        else {
+          e.angle = angleTo(e, target);
+          const ox = e.x, oy = e.y;
+          moveWithCollision(e, e.x + Math.cos(e.angle) * e.speed, e.y + Math.sin(e.angle) * e.speed, this.level);
+          if (Math.abs(e.x - ox) < 0.1 && Math.abs(e.y - oy) < 0.1) {
+            e.stuckTimer += dt;
+            if (e.stuckTimer > 2000) { e.patrolIdx = (e.patrolIdx + 1) % e.patrol.length; e.stuckTimer = 0; }
+          } else e.stuckTimer = 0;
+        }
+      } else if (e.state === 'investigate' && e.heardSound) {
+        e.angle = angleTo(e, e.heardSound);
+        const ox = e.x, oy = e.y;
+        moveWithCollision(e, e.x + Math.cos(e.angle) * e.speed, e.y + Math.sin(e.angle) * e.speed, this.level);
+        if (dist(e, e.heardSound) < 25) { e.heardSound = null; e.state = 'patrol'; e.alert = false; }
+        else if (Math.hypot(e.x - ox, e.y - oy) < 0.4) { e.stuckTimer = (e.stuckTimer || 0) + dt; if (e.stuckTimer > 1200) { e.heardSound = null; e.state = 'patrol'; e.stuckTimer = 0; } }
+        else e.stuckTimer = 0;
+      } else if (e.state === 'chase') {
+        const target = (e.lastKnownPos && !sees) ? e.lastKnownPos : p;
+        e.angle = angleTo(e, target);
+        e.aimAngle = angleTo(e, p);
+        const d = dist(e, p);
+        const ox = e.x, oy = e.y;
+        if (dist(e, target) > 40) {
+          const nx = e.x + Math.cos(e.angle) * e.speed;
+          const ny = e.y + Math.sin(e.angle) * e.speed;
+          const canX = !isSolid(getTileAt(nx, e.y, lv));
+          const canY = !isSolid(getTileAt(e.x, ny, lv));
+          if (canX) e.x = nx;
+          if (canY) e.y = ny;
+          // wall avoidance: اگه گیر کرد زاویه رو کمی بچرخون
+          if (!canX && !canY) {
+            e.wallAvoidAngle = (e.wallAvoidAngle || 0) + 0.15;
+            const wa = e.angle + e.wallAvoidAngle;
+            const ax = e.x + Math.cos(wa) * e.speed;
+            const ay = e.y + Math.sin(wa) * e.speed;
+            if (!isSolid(getTileAt(ax, e.y, lv))) e.x = ax;
+            else if (!isSolid(getTileAt(e.x, ay, lv))) e.y = ay;
+          } else { e.wallAvoidAngle = 0; }
+        }
+        if (Math.hypot(e.x - ox, e.y - oy) < 0.4) {
+          e.stuckTimer = (e.stuckTimer || 0) + dt;
+          if (e.stuckTimer > 1000) { e.state = 'investigate'; e.heardSound = e.lastKnownPos ? { ...e.lastKnownPos } : { x: p.x, y: p.y }; e.stuckTimer = 0; }
+        } else e.stuckTimer = 0;
+        if (e.shootRange > 0 && d < e.shootRange && sees && Date.now() - e.lastShot > 1000) {
+          e.lastShot = Date.now();
+          this.bullets.push(new Bullet(e.x, e.y, e.aimAngle, 8, e.dmg, 'enemy', false));
+          this.audio.enemyShoot();
+          this.makeNoise(e.x, e.y, 90);
+        } else if (d < e.radius + p.radius + 5 && e.shootRange === 0 && sees) {
+          this.damagePlayer(e.dmg);
+        }
+        if (d < 40 && p.silent && Math.abs(angleTo(p, e) - e.angle) > Math.PI * 0.8) {
+          e.alive = false; this.stats.kills++; this.justKilled = true; this.audio.enemyDeath();
+        }
+      }
+
+      if (e.type === 'medic') {
+        for (const o of this.enemies) {
+          if (o.alive && o.hp < o.maxHp && dist(e, o) < 50) o.hp = Math.min(o.maxHp, o.hp + dt * 0.05);
+        }
+      }
+
+      if (Date.now() - e.lastRadio > 8000) {
+        e.lastRadio = Date.now();
+        for (const o of this.enemies) {
+          if (o !== e && o.alive && dist(e, o) < 400 && o.state === 'patrol') o.lastRadio = Date.now();
+        }
+      }
+    }
+  }
+
+  damagePlayer(dmg) {
+    const p = this.player;
+    const actual = dmg * (1 - p.armor);
+    p.hp -= actual;
+    this.stats.damageTaken += actual;
+    this.audio.playerHurt();
+    this.raiseAlert(1);
+    if (p.hp <= 0) { p.alive = false; this.audio.playerDeath(); this.messages.show('کشته شدی! R برای restart'); }
+  }
+
+  updateBullets(dt) {
+    const lv = this.level;
+    const cols = Math.floor(lv.mapW / lv.tile), rows = Math.floor(lv.mapH / lv.tile);
+    for (let i = this.bullets.length - 1; i >= 0; i--) {
+      const b = this.bullets[i];
+      b.x += b.vx; b.y += b.vy; b.life--;
+      if (b.life <= 0 || isSolid(getTileAt(b.x, b.y, lv))) {
+        if (isSolid(getTileAt(b.x, b.y, lv))) this.audio.hitWall();
+        this.bullets.splice(i, 1); continue;
+      }
+      if (b.owner === 'player') {
+        for (const e of this.enemies) {
+          if (e.alive && dist(b, e) < e.radius) {
+            e.hp -= b.dmg; this.stats.hits++;
+            if (e.hp <= 0) {
+              e.alive = false; this.stats.kills++; this.justKilled = true;
+              this.audio.enemyDeath();
+              this.saveData.intel += e.type === 'commander' ? 50 : 10;
+              if (e.type === 'commander') {
+                this.commanderDead = true;
+                const obj = this.level.objectives.find(o => o.id === 'kill_cmd');
+                if (obj) obj.done = true;
+                for (const o of this.enemies) if (o.alive) o.confused = true;
+              }
+              e.hasRadio = true;
+              for (const o of this.enemies) {
+                if (!o.alive || o === e || dist(o, e) > 280) continue;
+                if (!raycast(o.x, o.y, e.x, e.y, lv.grid, lv.tile, cols, rows)) continue;
+                o.heardSound = { x: e.x, y: e.y };
+                o.state = 'investigate';
+                o.investigateStart = Date.now();
+              }
+            }
+            if (!b.pierce) { this.bullets.splice(i, 1); break; }
+          }
+        }
+      } else if (dist(b, this.player) < this.player.radius) {
+        this.damagePlayer(b.dmg);
+        this.bullets.splice(i, 1);
+      }
+    }
+  }
+
+  updateGrenades(dt) {
+    for (let i = this.grenades.length - 1; i >= 0; i--) {
+      const g = this.grenades[i];
+      g.x += g.vx; g.y += g.vy; g.timer -= dt;
+      if (g.timer <= 0) {
+        const r = g.isC4 ? 60 : 100;
+        for (const e of this.enemies) if (e.alive && dist(g, e) < r) { e.hp = 0; e.alive = false; this.stats.kills++; }
+        if (dist(g, this.player) < r) this.damagePlayer(40);
+        this.raiseAlert(2);
+        g.isC4 ? this.audio.c4() : this.audio.grenade();
+        for (let p = 0; p < 15; p++) this.particles.push({ x: g.x, y: g.y, vx: (Math.random() - 0.5) * 5, vy: (Math.random() - 0.5) * 5, life: 500, color: '#fa0' });
+        this.grenades.splice(i, 1);
+      }
+    }
+  }
+
+  triggerSecurityAlert(source) {
+    if (this.securityCooldown && Date.now() - this.securityCooldown < 1200) return;
+    this.securityCooldown = Date.now();
+    this.raiseAlert(1.2);
+    this.audio.alert();
+    this.messages.show('🚨 آژیر! ' + source);
+    const pl = this.player;
+    // همه دشمن‌های بیرون از ساختمون میان سمت پلیر
+    for (const e of this.enemies) {
+      if (!e.alive || e.interiorBuildingId) continue;
+      e.lastKnownPos = { x: pl.x, y: pl.y };
+      e.lastSeenTime = Date.now();
+      e.state = 'chase';
+      e.alert = true;
+    }
+    // flash قرمز روی صفحه
+    this.alertFlash = 8;
+  }
+
+  updateWorld(dt) {
+    const lv = this.level;
+    const p = this.player;
+    const cols = Math.floor(lv.mapW / lv.tile), rows = Math.floor(lv.mapH / lv.tile);
+    for (const sl of this.searchlights) {
+      sl.angle += sl.speed * dt * 0.001;
+      if (p.invisible) continue;
+      if (!inVisionCone(sl, sl.angle, p, 300, 0.65)) continue;
+      if (!raycast(sl.x, sl.y, p.x, p.y, lv.grid, lv.tile, cols, rows)) continue;
+      this.triggerSecurityAlert('نورگرد امنیتی!');
+    }
+    for (const cam of this.cameras) {
+      cam.angle += dt * 0.0009;
+      if (p.invisible) continue;
+      if (!inVisionCone(cam, cam.angle, p, cam.range || 240, 0.7)) continue;
+      if (!raycast(cam.x, cam.y, p.x, p.y, lv.grid, lv.tile, cols, rows)) continue;
+      this.triggerSecurityAlert('دوربین مداربسته!');
+    }
+    for (const h of this.helicopters) {
+      if (!h.active) continue;
+      h.x += h.speed;
+      if (dist(h, this.player) < 400 && !this.player.invisible) {
+        if (Math.random() < 0.02) this.bullets.push(new Bullet(h.x, h.y, angleTo(h, this.player), 10, 15, 'enemy', false));
+      }
+      if (h.x > this.level.mapW + 100) h.active = false;
+    }
+    for (const car of this.patrolCars) {
+      const target = car.path[car.idx];
+      car.x += (target.x - car.x) * 0.01 * car.speed;
+      car.y += (target.y - car.y) * 0.01 * car.speed;
+      if (dist(car, target) < 10) car.idx = (car.idx + 1) % car.path.length;
+      if (dist(car, this.player) < 80) this.raiseAlert(0.2);
+    }
+    if (this.alertLevel > 1) {
+      this.alertDecay += dt;
+      const anyChasing = this.enemies.some(e => e.alive && e.state === 'chase');
+      if (!anyChasing && this.alertDecay > 8000) this.alertLevel = Math.max(1, this.alertLevel - dt * 0.002);
+    }
+  }
+
+  endMission() {
+    const p = this.player;
+    const stars = 1;
+    let s = stars;
+    if (p.hp / p.maxHp > 0.6) s++;
+    if (this.stats.shots > 0 && this.stats.hits / this.stats.shots > 0.7) s++;
+    const optDone = this.level.objectives.filter(o => o.optional && o.done).length;
+    const optTotal = this.level.objectives.filter(o => o.optional).length;
+    if (optTotal > 0 && optDone === optTotal) s++;
+    if (!p.usedSavePoint) s++;
+    const prev = this.saveData.stars[this.selectedLevel] || 0;
+    this.saveData.stars[this.selectedLevel] = Math.max(prev, s);
+    if (this.selectedLevel >= this.saveData.unlocked) this.saveData.unlocked = Math.min(this.saveData.totalLevels, this.selectedLevel + 1);
+    SaveManager.save(this.saveData);
+    this.showPostMission(s);
+  }
+
+  showPostMission(stars) {
+    this.showScreen('postMission');
+    document.getElementById('postStars').textContent = '★'.repeat(stars) + '☆'.repeat(5 - stars);
+    const elapsed = Math.floor((Date.now() - this.startTime) / 1000);
+    document.getElementById('postStats').innerHTML = `
+      <div class="stat-row"><span>کشته‌ها</span><span>${this.stats.kills}</span></div>
+      <div class="stat-row"><span>دقت</span><span>${this.stats.shots ? Math.round(this.stats.hits / this.stats.shots * 100) : 0}%</span></div>
+      <div class="stat-row"><span>HP باقی</span><span>${Math.round(this.player.hp / this.player.maxHp * 100)}%</span></div>
+      <div class="stat-row"><span>زمان</span><span>${elapsed}s</span></div>
+      <div class="stat-row"><span>Intel</span><span>${this.saveData.intel} 💎</span></div>`;
+    this.showUpgradeChoices('postUpgrades', 3, id => { this.postUpgradePick = id; });
+    this.pregenerateNext();
+  }
+
+  nextLevel() {
+    if (this.postUpgradePick && !this.saveData.upgrades.includes(this.postUpgradePick)) {
+      this.saveData.upgrades.push(this.postUpgradePick);
+      SaveManager.save(this.saveData);
+    }
+    this.postUpgradePick = null;
+    if (this.selectedLevel < this.saveData.totalLevels) {
+      this.selectedLevel++;
+      this.showPreMission();
+    } else {
+      alert('تبریک! همه مراحل تموم شد! 🎉');
+      this.showScreen('levelSelect');
+      this.buildLevelSelect();
+    }
+  }
+
+  drawEnemy(e) {
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.translate(e.x - this.camera.x, e.y - this.camera.y);
+    ctx.rotate(e.angle);
+    const colors = { basic: '#e44', fast: '#f80', tank: '#a4f', shooter: '#48f', commander: '#fa0', medic: '#4c4', dog: '#a66' };
+    ctx.fillStyle = colors[e.type] || '#e44';
+    if (e.type === 'fast') {
+      ctx.beginPath(); ctx.moveTo(15, 0); ctx.lineTo(-10, -10); ctx.lineTo(-10, 10); ctx.closePath(); ctx.fill();
+    } else if (e.type === 'tank') {
+      ctx.fillRect(-15, -15, 30, 30);
+    } else if (e.type === 'commander') {
+      for (let i = 0; i < 5; i++) {
+        const a = (i * 4 * Math.PI / 5) - Math.PI / 2;
+        const r = i % 2 === 0 ? 18 : 8;
+        ctx.beginPath(); ctx.arc(Math.cos(a) * r, Math.sin(a) * r, 5, 0, TAU); ctx.fill();
+      }
+    } else if (e.type === 'medic') {
+      ctx.fillRect(-10, -3, 20, 6); ctx.fillRect(-3, -10, 6, 20);
+    } else if (e.type === 'shooter') {
+      ctx.beginPath(); ctx.arc(0, 0, 12, 0, TAU); ctx.fill();
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, 0, 16, 0, TAU); ctx.stroke();
+    } else if (e.type === 'dog') {
+      ctx.beginPath(); ctx.moveTo(10, 0); ctx.lineTo(-8, -6); ctx.lineTo(-5, 0); ctx.lineTo(-8, 6); ctx.closePath(); ctx.fill();
+    } else {
+      ctx.beginPath(); ctx.arc(0, 0, e.radius, 0, TAU); ctx.fill();
+    }
+    if (e.alert) { ctx.strokeStyle = '#f00'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, 0, e.radius + 5, 0, TAU); ctx.stroke(); }
+    ctx.fillStyle = '#300'; ctx.fillRect(-12, -e.radius - 8, 24, 4);
+    ctx.fillStyle = '#0f0'; ctx.fillRect(-12, -e.radius - 8, 24 * (e.hp / e.maxHp), 4);
+    ctx.restore();
+  }
+
+  render() {
+    const ctx = this.ctx;
+    const lv = this.level;
+    const p = this.player;
+    const theme = lv.theme;
+    this.camera.x = clamp(p.x - this.W / 2, 0, lv.mapW - this.W);
+    this.camera.y = clamp(p.y - this.H / 2, 0, lv.mapH - this.H);
+    const cx = this.camera.x, cy = this.camera.y;
+
+    let skyColor = theme.sky;
+    if (this.isNight) skyColor = '#0a0a15';
+    if (this.weather === 'rain') skyColor = '#1a1a2a';
+    if (this.weather === 'fog') skyColor = '#2a2a35';
+    if (this.weather === 'sandstorm') skyColor = '#3a3020';
+    ctx.fillStyle = skyColor;
+    ctx.fillRect(0, 0, this.W, this.H);
+
+    ctx.fillStyle = theme.grass;
+    ctx.fillRect(-cx % lv.tile, -cy % lv.tile, this.W + lv.tile, this.H + lv.tile);
+    for (let r = 0; r < lv.grid.length; r++) for (let c = 0; c < lv.grid[0].length; c++) {
+      const tx = c * lv.tile - cx, ty = r * lv.tile - cy;
+      if (tx < -lv.tile || ty < -lv.tile || tx > this.W || ty > this.H) continue;
+      const v = lv.grid[r][c];
+      if (v === 1) {
+        ctx.fillStyle = '#5a5a68'; ctx.fillRect(tx, ty, lv.tile, lv.tile);
+        ctx.fillStyle = '#6e6e7e'; ctx.fillRect(tx + 2, ty + 2, lv.tile - 4, 6);
+      } else if (v === 4) {
+        ctx.fillStyle = '#6a5040'; ctx.fillRect(tx, ty, lv.tile, lv.tile);
+        ctx.strokeStyle = '#4a3020'; ctx.strokeRect(tx + 2, ty + 2, lv.tile - 4, lv.tile - 4);
+      } else if (v === 5) {
+        ctx.fillStyle = '#3a3a48'; ctx.fillRect(tx, ty, lv.tile, lv.tile);
+        ctx.fillStyle = '#2a2a35'; ctx.fillRect(tx + 4, ty + 4, lv.tile - 8, lv.tile - 8);
+      } else if (v === 6) {
+        ctx.fillStyle = '#7a8a9c'; ctx.fillRect(tx, ty, lv.tile, lv.tile);
+        ctx.strokeStyle = '#4a5a6a'; ctx.strokeRect(tx + 1, ty + 1, lv.tile - 2, lv.tile - 2);
+      } else if (v === 3) {
+        ctx.fillStyle = '#6a4a28'; ctx.fillRect(tx, ty, lv.tile, lv.tile);
+      }
+    }
+
+    for (const b of lv.buildings) {
+      const bx = b.x - cx, by = b.y - cy;
+      if (bx > this.W + 50 || by > this.H + 50 || bx + b.w < -50 || by + b.h < -50) continue;
+      // سایه
+      ctx.fillStyle = 'rgba(0,0,0,0.35)';
+      ctx.fillRect(bx + 5, by + 5, b.w, b.h);
+      // بدنه
+      const bColors = { command:'#3a2a1a', hidden:'#2a3020', sub:'#2a2a38', hospital:'#1a2a1a' };
+      ctx.fillStyle = bColors[b.type] || '#2a2a38';
+      ctx.fillRect(bx, by, b.w, b.h);
+      // حاشیه رنگی بر اساس نوع
+      const bBorder = { command:'#c84', hidden:'#484', sub:'#48a', hospital:'#4a4' };
+      ctx.strokeStyle = bBorder[b.type] || '#556677';
+      ctx.lineWidth = 2; ctx.strokeRect(bx+1, by+1, b.w-2, b.h-2);
+      // خطوط داخلی (ظاهر آجر)
+      ctx.strokeStyle = 'rgba(255,255,255,0.05)'; ctx.lineWidth = 1;
+      for(let lx2=bx+16;lx2<bx+b.w-8;lx2+=16){ctx.beginPath();ctx.moveTo(lx2,by+2);ctx.lineTo(lx2,by+b.h-2);ctx.stroke();}
+      for(let ly2=by+16;ly2<by+b.h-8;ly2+=16){ctx.beginPath();ctx.moveTo(bx+2,ly2);ctx.lineTo(bx+b.w-2,ly2);ctx.stroke();}
+    }
+    for (const d of lv.doors) {
+      const dx = d.x - cx, dy = d.y - cy;
+      if (dx < -60 || dy < -60 || dx > this.W + 60 || dy > this.H + 60) continue;
+      if (d.open) {
+        // در باز: یه نوار کنار تایل
+        ctx.fillStyle = 'rgba(80,60,30,0.7)';
+        ctx.fillRect(dx - lv.tile/2, dy - 3, lv.tile * 0.3, 6);
+      } else {
+        // در بسته: نوار قهوه‌ای کامل
+        ctx.fillStyle = '#8B6020';
+        ctx.fillRect(dx - lv.tile/2 + 2, dy - 4, lv.tile - 4, 8);
+        ctx.fillStyle = '#c8922a';
+        ctx.fillRect(dx - lv.tile/2 + 4, dy - 2, lv.tile - 8, 4);
+        // دستگیره
+        ctx.fillStyle = '#ffe090';
+        ctx.beginPath(); ctx.arc(dx + lv.tile/2 - 10, dy, 3, 0, TAU); ctx.fill();
+      }
+    }
+
+    for (const b of lv.buildings) {
+      if (p.insideBuilding !== b) continue;
+      const bx = b.x - cx, by = b.y - cy;
+      ctx.fillStyle = '#2e3540';
+      ctx.fillRect(bx + lv.tile * 0.4, by + lv.tile * 0.4, b.w - lv.tile * 0.8, b.h - lv.tile * 0.8);
+      if (b.type === 'command') { ctx.fillStyle = '#fa0'; ctx.fillRect(bx + b.w / 2 - 6, by + 10, 12, 12); }
+    }
+
+    for (const l of this.lights) {
+      if (!l.on) continue;
+      const lx = l.x - cx, ly = l.y - cy;
+      const grad = ctx.createRadialGradient(lx, ly, 0, lx, ly, 80);
+      grad.addColorStop(0, 'rgba(255,255,200,0.3)');
+      grad.addColorStop(1, 'rgba(255,255,200,0)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(lx - 80, ly - 80, 160, 160);
+    }
+
+    for (const cam of this.cameras) {
+      const camx = cam.x - cx, camy = cam.y - cy;
+      ctx.save(); ctx.translate(camx, camy); ctx.rotate(cam.angle);
+      ctx.fillStyle = 'rgba(255,210,60,0.12)';
+      ctx.beginPath(); ctx.moveTo(0, 0); ctx.arc(0, 0, cam.range || 240, -0.35, 0.35); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#ffcc44';
+      ctx.beginPath(); ctx.moveTo(0, -10); ctx.lineTo(14, 10); ctx.lineTo(-14, 10); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#888'; ctx.fillRect(-3, 10, 6, 8);
+      ctx.restore();
+    }
+    for (const sl of this.searchlights) {
+      const sx = sl.x - cx, sy = sl.y - cy;
+      ctx.save(); ctx.translate(sx, sy); ctx.rotate(sl.angle);
+      ctx.fillStyle = 'rgba(255,255,120,0.18)';
+      ctx.beginPath(); ctx.moveTo(0, 0); ctx.arc(0, 0, 300, -0.32, 0.32); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#ddd'; ctx.beginPath(); ctx.arc(0, 0, 10, 0, TAU); ctx.fill();
+      ctx.restore();
+    }
+
+    for (const drop of this.drops) {
+      if (!dropVisible(drop, p.insideBuilding)) continue;
+      const dx = drop.x - cx, dy = drop.y - cy;
+      const icons = { health: '💊', ammo: '🔫', grenade: '💣', medkit: '🏥', armor: '🛡️', keycard: '🔑', radio: '📡', meat: '🥩' };
+      ctx.font = '16px serif'; ctx.fillText(icons[drop.type] || '?', dx - 8, dy + 5);
+    }
+
+    for (const sp of lv.savePoints) {
+      if (!sp.used) { ctx.fillStyle = '#4af'; ctx.font = '14px sans-serif'; ctx.fillText('💾', sp.x - cx - 8, sp.y - cy + 5); }
+    }
+
+    for (const e of this.enemies) {
+      if (!e.alive) continue;
+      if (e.interiorBuildingId && (!p.insideBuilding || p.insideBuilding.id !== e.interiorBuildingId)) continue;
+      this.drawEnemy(e);
+    }
+
+    for (const b of lv.buildings) {
+      if (p.insideBuilding === b) continue;
+      const bx = b.x - cx, by = b.y - cy;
+      if (bx > this.W || by > this.H || bx + b.w < 0 || by + b.h < 0) continue;
+      const inset = lv.tile;
+      const roofColor = b.type === 'command' ? '#2a3340' : b.type === 'hidden' ? '#3a3428' : b.type === 'sub' ? '#3a3530' : '#3a4250';
+      ctx.fillStyle = roofColor;
+      if (b.w > inset * 2 && b.h > inset * 2)
+        ctx.fillRect(bx + inset, by + inset, b.w - inset * 2, b.h - inset * 2);
+      drawBuildingShell(ctx, b, lv, cx, cy);
+    }
+
+    for (const d of lv.doors) {
+      if (dist(p, d) >= 72) continue;
+      const dx = d.x - cx, dy = d.y - cy;
+      ctx.fillStyle = '#ffe066';
+      ctx.beginPath(); ctx.arc(dx, dy - 14, 5, 0, TAU); ctx.fill();
+    }
+
+    for (const drop of this.drops) {
+      if (!dropVisible(drop, p.insideBuilding)) continue;
+      if (dist(p, drop) >= 52) continue;
+      const dx = drop.x - cx, dy = drop.y - cy;
+      ctx.fillStyle = '#7dff7d';
+      ctx.beginPath(); ctx.arc(dx, dy - 16, 4, 0, TAU); ctx.fill();
+    }
+
+    for (const b of this.bullets) {
+      ctx.fillStyle = b.owner === 'player' ? '#ff4' : '#f44';
+      ctx.beginPath(); ctx.arc(b.x - cx, b.y - cy, 3, 0, TAU); ctx.fill();
+    }
+
+    for (const g of this.grenades) {
+      ctx.fillStyle = g.isC4 ? '#a44' : '#4a4';
+      ctx.beginPath(); ctx.arc(g.x - cx, g.y - cy, 6, 0, TAU); ctx.fill();
+    }
+
+    for (const pt of this.particles) {
+      ctx.fillStyle = pt.color; ctx.globalAlpha = pt.life / 500;
+      ctx.fillRect(pt.x - cx, pt.y - cy, 4, 4); ctx.globalAlpha = 1;
+    }
+
+    if (p.alive) {
+      ctx.save();
+      ctx.translate(p.x - cx, p.y - cy);
+      ctx.rotate(p.angle);
+      if (!p.invisible) {
+        ctx.fillStyle = '#4af';
+        ctx.beginPath(); ctx.arc(0, 0, p.radius, 0, TAU); ctx.fill();
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(8, -3, 14, 6);
+      } else { ctx.globalAlpha = 0.3; ctx.fillStyle = '#4af'; ctx.beginPath(); ctx.arc(0, 0, p.radius, 0, TAU); ctx.fill(); ctx.globalAlpha = 1; }
+      ctx.restore();
+    }
+
+    if (this.isNight) {
+      const grad = ctx.createRadialGradient(p.x - cx, p.y - cy, 30, p.x - cx, p.y - cy, 200);
+      grad.addColorStop(0, 'rgba(0,0,0,0)'); grad.addColorStop(1, 'rgba(0,0,0,0.85)');
+      ctx.fillStyle = grad; ctx.fillRect(0, 0, this.W, this.H);
+      ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(0, 0, this.W, this.H);
+    }
+    if (this.weather === 'fog') {
+      ctx.fillStyle = 'rgba(190,195,205,0.4)';
+      ctx.fillRect(0, 0, this.W, this.H);
+    } else if (this.weather === 'rain') {
+      ctx.fillStyle = 'rgba(100,120,160,0.15)';
+      ctx.fillRect(0, 0, this.W, this.H);
+    } else if (this.weather === 'sandstorm') {
+      ctx.fillStyle = 'rgba(180,150,90,0.25)';
+      ctx.fillRect(0, 0, this.W, this.H);
+    }
+
+    if (this.flagRaised) {
+      this.flagAnim += 0.02;
+      const fx = lv.cmdRoom.x + lv.cmdRoom.w / 2 - cx;
+      const fy = lv.cmdRoom.y - cy - this.flagAnim * 50;
+      ctx.fillStyle = '#f00'; ctx.fillRect(fx, fy, 20, 14);
+      ctx.fillStyle = '#888'; ctx.fillRect(fx - 2, fy, 3, 60);
+    }
+    if (this.alertFlash > 0) {
+      ctx.fillStyle = `rgba(255,0,0,${this.alertFlash * 0.03})`;
+      ctx.fillRect(0, 0, this.W, this.H);
+      this.alertFlash--;
+    }
+
+    this.drawHUD();
+    this.drawMinimap();
+    if (!p.alive) {
+      ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(0, 0, this.W, this.H);
+      ctx.fillStyle = '#f44'; ctx.font = '24px sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText('کشته شدی! F = Restart', this.W / 2, this.H / 2);
+      ctx.textAlign = 'left';
+    }
+  }
+
+  drawHUD() {
+    const p = this.player;
+    const ctx = this.ctx;
+    ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(10, this.H - 80, 300, 70);
+    ctx.fillStyle = '#f44'; ctx.fillRect(20, this.H - 70, 180 * (p.hp / p.maxHp), 12);
+    ctx.strokeStyle = '#fff'; ctx.strokeRect(20, this.H - 70, 180, 12);
+    const wn = p.weapons[p.weaponIdx];
+    ctx.fillStyle = '#fff'; ctx.font = '14px sans-serif';
+    ctx.fillText(`🔫 ${wn || '-'} | ${p.ammo[wn] || 0} | 💣${p.grenades} | Alert:${Math.floor(this.alertLevel)}`, 20, this.H - 45);
+    const wx = this.weatherEndTime ? Math.ceil((this.weatherEndTime - Date.now()) / 1000) + 's' : '';
+    ctx.fillText(`Intel:${this.saveData.intel} | F=لوت | C=Craft | ${this.isNight ? '🌙' : '☀️'} ${this.weather}${wx ? '(' + wx + ')' : ''}`, 20, this.H - 25);
+    const invIcons = { health:'💊', grenade:'💣', medkit:'🏥', armor:'🛡️', keycard:'🔑', radio:'📡', meat:'🥩', ammo:'🔫', c4:'💥' };
+    for (let i = 0; i < 6; i++) {
+      const item = p.inventory[i];
+      const sx = 320 + i * 38, sy = this.H - 62;
+      const sel = i === this.selectedInvSlot;
+      ctx.fillStyle = sel ? 'rgba(0,120,200,0.5)' : item ? 'rgba(40,50,70,0.85)' : 'rgba(20,20,30,0.6)';
+      ctx.fillRect(sx, sy, 34, 34);
+      ctx.strokeStyle = sel ? '#4af' : '#445';
+      ctx.lineWidth = sel ? 2.5 : 1.5; ctx.strokeRect(sx, sy, 34, 34);
+      if (item) {
+        ctx.font = '18px serif';
+        ctx.fillText(invIcons[item.type] || '📦', sx + 7, sy + 23);
+        if (item.count > 1) { ctx.fillStyle = '#fff'; ctx.font = 'bold 10px sans-serif'; ctx.fillText(item.count, sx + 25, sy + 32); }
+      }
+      // شماره slot
+      ctx.fillStyle = sel ? '#4af' : '#667';
+      ctx.font = '9px sans-serif'; ctx.fillText(i+1, sx+2, sy+10);
+    }
+    ctx.fillStyle='#aaa';ctx.font='11px sans-serif';
+    ctx.fillText('Tab=تعویض  Q=استفاده',320,this.H-66);
+    if (p.reloading) { ctx.fillStyle = '#fa0'; ctx.fillText('Reloading...', this.W / 2 - 40, this.H - 100); }
+  }
+
+  drawMinimap() {
+    const mm = this.mmCtx;
+    const lv = this.level;
+    const scale = 160 / Math.max(lv.mapW, lv.mapH);
+    mm.fillStyle = this.isNight ? '#111' : '#333';
+    mm.fillRect(0, 0, 160, 160);
+    mm.fillStyle = '#666';
+    for (let r = 0; r < lv.grid.length; r += 2) for (let c = 0; c < lv.grid[0].length; c += 2)
+      if (lv.grid[r][c] === 1) mm.fillRect(c * lv.tile * scale, r * lv.tile * scale, lv.tile * scale * 2, lv.tile * scale * 2);
+    mm.fillStyle = '#fa0'; mm.fillRect(lv.mainBase.x * scale, lv.mainBase.y * scale, 8, 8);
+    for (const e of this.enemies) if (e.alive) {
+      mm.fillStyle = e.alert ? '#f00' : e.state === 'patrol' ? '#a00' : '#f80';
+      mm.fillRect(e.x * scale - 1, e.y * scale - 1, 3, 3);
+    }
+    for (const d of this.drops) {
+      if (dist(d, this.player) > 800) continue;
+      mm.fillStyle = '#0f0'; mm.fillRect(d.x * scale - 1, d.y * scale - 1, 2, 2);
+    }
+    mm.fillStyle = '#4af'; mm.fillRect(this.player.x * scale - 2, this.player.y * scale - 2, 4, 4);
+    if (this.player.radar) {
+      mm.strokeStyle = 'rgba(74,170,255,0.5)'; mm.lineWidth = 1;
+      mm.beginPath(); mm.arc(this.player.x * scale, this.player.y * scale, 40, 0, TAU); mm.stroke();
+    }
+  }
+
+  update(dt) {
+    if (this.state !== 'game' || this.paused) return;
+    if (this.weatherEndTime && Date.now() > this.weatherEndTime) {
+      this.weather = 'clear';
+      this.weatherEndTime = 0;
+      this.messages.show('مه کنار رفت — دید بهتر شد');
+    }
+    this.updatePlayer(dt);
+    this.updateEnemies(dt);
+    this.updateBullets(dt);
+    this.updateGrenades(dt);
+    this.updateWorld(dt);
+    this.messages.update(this, dt);
+    for (let i = this.particles.length - 1; i >= 0; i--) {
+      const pt = this.particles[i];
+      pt.x += pt.vx; pt.y += pt.vy; pt.life -= dt;
+      if (pt.life <= 0) this.particles.splice(i, 1);
+    }
+  }
+
+  loop(ts) {
+    if (!this.lastTs) this.lastTs = ts;
+    const dt = Math.min(ts - this.lastTs, 50);
+    this.lastTs = ts;
+    if (this.state === 'game' && !this.paused) {
+      this.update(dt);
+      this.render();
+    }
+    requestAnimationFrame(this.loop);
+  }
+}
+
+const game = new Game();
+// پاک کردن cache قدیمی
+for(let i=1;i<=50;i++) localStorage.removeItem('levelCache_v5_'+i);
+</script>
+</body>
+</html>
